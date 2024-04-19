@@ -1,10 +1,8 @@
 import streamlit as st
+from lang_programs import GenerateAnswer
 from openai import OpenAI
 
 st.title('Mirror')
-
-# Point to the local server
-llm = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
 
 # Initialize chat history
 if "messages" not in st.session_state:

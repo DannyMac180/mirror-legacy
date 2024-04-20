@@ -6,9 +6,9 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAI
 
-llm = ChatOpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+llm = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio", model="bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp16.gguf")
 
 loader = ObsidianLoader(
     path="/Users/danielmcateer/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ideaverse"
@@ -22,7 +22,7 @@ vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings
 
 # Retrieve and generate using the relevant snippets of the blog.
 retriever = vectorstore.as_retriever()
-prompt = "You are a wise and insightful guide for the user. Consider the context in your response and provide a thoughtful answer."
+prompt = hub.pull("rlm/rag-prompt")
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
@@ -35,5 +35,4 @@ rag_chain = (
     | StrOutputParser()
 )
 
-print(rag_chain.invoke("Tell me about the importance of things I wrote about on the daily note from 2024-04-19"))
-
+print(rag_chain.invoke("What is my wife's name based on my notes?"))

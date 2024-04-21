@@ -1,11 +1,10 @@
 import streamlit as st
-from lang_programs import GenerateAnswer
-from openai import OpenAI
+from lang_programs import LangChainProgram
 
 st.title('Mirror')
 
-# Point to the local server
-llm = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+# Initialize LangChainProgram instance
+lang_chain_program = LangChainProgram()
 
 # Initialize chat history
 if "messages" not in st.session_state:
@@ -27,15 +26,16 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("assistant"):
         with st.spinner("Reasoning..."):
             try:
-                stream = llm.chat.completions.create(
-                    model='hermes-2-pro',
-                    messages=[
-                            {"role": m["role"], "content": m["content"]}
-                            for m in st.session_state.messages
-                        ],
-                    stream=True,
-                )
-                response = st.write_stream(stream)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                # Create an empty container for the streaming response
+                response_container = st.empty()
+                full_response = ""
+                
+                # Stream the response chunks
+                for chunk in lang_chain_program.invoke_chain(prompt):
+                    full_response += chunk
+                    response_container.markdown(full_response)
+                
+                # Append the full response to the chat history
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")

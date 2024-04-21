@@ -8,19 +8,51 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from contextlib import contextmanager
 
-chat = ChatOpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio", model="bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp16.gguf")
+class LangChainProgram:
+    def __init__(self):
+        self.chat = None
+        self.chain = None
 
-response =chat.invoke(
-    [
-        HumanMessage(
-            content="What is the capital of France?"
-            )
-        ]
-    )
+    @contextmanager
+    def create_chat(self):
+        self.chat = ChatOpenAI(base_url="http://localhost:1234/v1", 
+                               api_key="lm-studio", 
+                               model="bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp16.gguf",
+                               streaming=True)
+        try:
+            yield self.chat
+        finally:
+            self.chat = None
 
-print(response.content)
+    def invoke_chat(self, message):
+        with self.create_chat() as chat:
+            response = chat.invoke([HumanMessage(content=message)])
+        return response
 
+    @contextmanager
+    def create_chain(self):
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are a helpful, smart, kind, and efficient AI assistant. You always fulfill the user's requests to the best of your ability.",
+                ),
+                MessagesPlaceholder(variable_name="messages"),
+            ]
+        )
+        with self.create_chat() as chat:
+            self.chain = prompt | chat
+            yield self.chain
+        self.chain = None
+
+    def invoke_chain(self, message):
+        with self.create_chain() as chain:
+            response = chain.invoke([HumanMessage(content=message)])
+            for chunk in response:
+                yield chunk
 # loader = ObsidianLoader(
 #     path="/Users/danielmcateer/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ideaverse"
 # )

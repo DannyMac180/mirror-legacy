@@ -7,18 +7,12 @@ st.title('Mirror')
 if "lang_chain_program" not in st.session_state:
     st.session_state.lang_chain_program = LangChainProgram()
 
-# Initialize chat history
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# Display chat messages from history on app rerun
-for message in st.session_state.chat_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Display chat messages from LangChainProgram's memory
+for message in st.session_state.lang_chain_program.memory.messages:
+    with st.chat_message(message.type):
+        st.markdown(message.content)
 
 if prompt := st.chat_input("What is up?"):
-    # Add user message to chat history of UI
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -33,8 +27,5 @@ if prompt := st.chat_input("What is up?"):
                 # Stream the response chunks
                 for chunk in st.session_state.lang_chain_program.invoke_chat(prompt):
                     response_container.markdown(chunk)
-                
-                # Append the full response to the chat history of the UI
-                st.session_state.chat_history.append({"role": "assistant", "content": chunk})
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")

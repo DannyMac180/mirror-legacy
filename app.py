@@ -3,8 +3,9 @@ from lang_programs import LangChainProgram
 
 st.title('Mirror')
 
-# Initialize LangChainProgram instance
-lang_chain_program = LangChainProgram()
+# Initialize LangChainProgram instance and store it in the session state
+if "lang_chain_program" not in st.session_state:
+    st.session_state.lang_chain_program = LangChainProgram()
 
 # Initialize chat history
 if "chat_history" not in st.session_state:
@@ -30,7 +31,7 @@ if prompt := st.chat_input("What is up?"):
                 response_container = st.empty()
                 
                 # Stream the response chunks
-                for chunk in lang_chain_program.invoke_chain(prompt, st.session_state.chat_history):
+                for chunk in st.session_state.lang_chain_program.invoke_chat(prompt):
                     response_container.markdown(chunk)
                 
                 # Append the full response to the chat history of the UI

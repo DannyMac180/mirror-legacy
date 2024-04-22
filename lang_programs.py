@@ -7,9 +7,11 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from contextlib import contextmanager
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain
 
 class LangChainProgram:
     def __init__(self):
@@ -38,23 +40,23 @@ class LangChainProgram:
     def create_chain(self):
         prompt = ChatPromptTemplate.from_messages(
             [
-                (
-                    "system",
-                    "You are a helpful, smart, kind, and efficient AI assistant. You always fulfill the user's requests to the best of your ability.",
-                ),
-                MessagesPlaceholder(variable_name="messages"),
+                SystemMessage(content="You are a helpful, smart, kind, and efficient AI assistant."),
+                MessagesPlaceholder(variable_name="history"),  # This will be replaced by the actual chat history
+                HumanMessage(content="{input}")  # This expects a variable named 'input'
             ]
         )
         with self.create_chat() as chat:
-            self.chain = prompt | chat
+            memory = ConversationBufferMemory(return_messages=True)
+            self.chain = ConversationChain(memory=memory, prompt=prompt, llm=chat, input_key="input")
             yield self.chain
         self.chain = None
 
-    def invoke_chain(self, message):
+    def invoke_chain(self, message, chat_history):
         with self.create_chain() as chain:
             response = ""
-            for chunk in chain.stream([HumanMessage(content=message)]):
-                response += chunk.content
+            # Ensure the input is passed as a dictionary with 'input' as the key
+            for chunk in chain.predict({"input": message, "history": chat_history}):
+                response += chunk
                 yield response
 # loader = ObsidianLoader(
 #     path="/Users/danielmcateer/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ideaverse"

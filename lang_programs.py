@@ -29,8 +29,10 @@ class LangChainProgram:
 
     def invoke_chat(self, message):
         with self.create_chat() as chat:
-            response = chat.invoke([HumanMessage(content=message)])
-        return response
+            response = ""
+            for chunk in chat.stream([HumanMessage(content=message)]):
+                response += chunk.content
+                yield response
 
     @contextmanager
     def create_chain(self):
@@ -50,9 +52,10 @@ class LangChainProgram:
 
     def invoke_chain(self, message):
         with self.create_chain() as chain:
-            response = chain.invoke([HumanMessage(content=message)])
-            for chunk in response:
-                yield chunk
+            response = ""
+            for chunk in chain.stream([HumanMessage(content=message)]):
+                response += chunk.content
+                yield response
 # loader = ObsidianLoader(
 #     path="/Users/danielmcateer/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ideaverse"
 # )

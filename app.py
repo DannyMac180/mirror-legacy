@@ -28,14 +28,12 @@ if prompt := st.chat_input("What is up?"):
             try:
                 # Create an empty container for the streaming response
                 response_container = st.empty()
-                full_response = ""
                 
                 # Stream the response chunks
                 for chunk in lang_chain_program.invoke_chain(prompt):
-                    full_response += chunk
-                    response_container.markdown(full_response)
+                    response_container.markdown(chunk)
                 
                 # Append the full response to the chat history
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                st.session_state.messages.append({"role": "assistant", "content": chunk})
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")

@@ -6,6 +6,7 @@ import json
 from dotenv import load_dotenv
 
 load_dotenv()
+print(os.getenv("WCS_URL"))
 
 client = weaviate.connect_to_wcs(
     cluster_url=os.getenv("WCS_URL"),
@@ -16,7 +17,11 @@ client = weaviate.connect_to_wcs(
 )
 
 try:
-    pass
+    obsidian_docs = client.collections.create(
+        name="Obsidian_Docs",
+        vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),
+        generative_config=wvc.config.Configure.Generative.openai()
+    )
 finally:
     client.close()
 

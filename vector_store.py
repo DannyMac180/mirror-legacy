@@ -1,27 +1,35 @@
 import weaviate
-import weaviate.classes as wvc
+from langchain_weaviate.vectorstores import WeaviateVectorStore
+from langchain.text_splitter import CharacterTextSplitter
+from langchain_community.document_loaders import ObsidianLoader
+from langchain_community.embeddings.openai import OpenAIEmbeddings
 import os
-import requests
-import json
 from dotenv import load_dotenv
 
 load_dotenv()
-print(os.getenv("WCS_URL"))
 
-client = weaviate.connect_to_wcs(
+loader = ObsidianLoader(path="/Users/danielmcateer/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ideaverse")
+documents = loader.load()
+text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+docs = text_splitter.split_documents(documents)
+
+embeddings = OpenAIEmbeddings()
+
+weaviate_client = weaviate.connect_to_wcs(
     cluster_url=os.getenv("WCS_URL"),
-    auth_credentials=weaviate.auth.AuthApiKey(os.getenv("WCS_API_KEY")),
-    headers={
-        "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
-    }
+    auth_credentials=weaviate.auth.AuthApiKey(os.getenv("WCS_API_KEY"))
+)
+db = WeaviateVectorStore.from_documents(
+    documents=docs,
+    embedding=embeddings,
+    client=weaviate_client
 )
 
-try:
-    obsidian_docs = client.collections.create(
-        name="Obsidian_Docs",
-        vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),
-        generative_config=wvc.config.Configure.Generative.openai()
-    )
-finally:
-    client.close()
+query = "What is the worldview of the writer according to the documents?"
+docs = db.similarity_search(query)
 
+
+# Print the first 100 characters of each result
+for i, doc in enumerate(docs):
+    print(f"\nDocument {i+1}:")
+    print(doc.page_content[:100] + "...")

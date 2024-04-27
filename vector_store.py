@@ -1,10 +1,8 @@
-from langchain_chroma import Chroma
-from langchain_community.document_loaders import ObsidianLoader
-from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import CharacterTextSplitter
-from langchain.schema import Document
-from langchain_community.docstore import InMemoryDocstore
-from langchain.indexes import VectorstoreIndexCreator
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import Chroma
+from langchain.document_loaders import ObsidianLoader
+from langchain.indexes import SQLRecordManager, index
 from dotenv import load_dotenv
 import os
 
@@ -15,28 +13,25 @@ def update_vector_store():
     loader = ObsidianLoader(path=os.getenv("OBSIDIAN_PATH"))
     documents = loader.load()
 
-    # Initialize the record manager
-    index_creator = VectorstoreIndexCreator(
-        vectorstore_cls=Chroma,
-        embedding=OpenAIEmbeddings(),
+    # Split the documents into chunks
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+    docs = text_splitter.split_documents(documents)
+
+    # Create an instance of OpenAIEmbeddings
+    embeddings = OpenAIEmbeddings()
+
+    # Initialize the vector store
+    db = Chroma.from_documents(docs, embeddings, persist_directory="./chroma_db", collection_name="obsidian_docs")
+
+    # Initialize the RecordManager
+    namespace = "chroma/obsidian_docs"  # Use an appropriate namespace
+    record_manager = SQLRecordManager(
+        namespace, db_url="sqlite:///record_manager_cache.sql"
     )
-    record_manager = index_creator.record_manager
+    record_manager.create_schema()
 
-    # Compare loaded documents with RecordManager
-    new_documents = []
-    for doc in documents:
-        hash = doc.metadata["source"] + doc.page_content
-        if not record_manager.has_doc(hash):
-            new_documents.append(doc)
-
-    # Process new documents
-    if new_documents:
-        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-        docs = text_splitter.split_documents(new_documents)
-        db = Chroma.from_documents(docs, OpenAIEmbeddings(), persist_directory="./chroma_db")
-        record_manager.add_documents(new_documents)
-
-    print(f"Added {len(new_documents)} new documents to the vector store.")
+    # Index the documents using the `index` method
+    index(docs, record_manager, db, cleanup='full')
     
 # Run the function to update the vector store
 update_vector_store()

@@ -31,7 +31,8 @@ def update_vector_store():
     record_manager.create_schema()
 
     # Index the documents using the `index` method
-    index(docs, record_manager, db, cleanup='full')
+    indexing_result = index(docs, record_manager, db, cleanup='full')
+    print(indexing_result)
     
 # Run the function to update the vector store
 update_vector_store()

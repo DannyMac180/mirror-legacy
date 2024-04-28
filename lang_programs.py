@@ -13,7 +13,7 @@ class LangChainProgram:
         
     def load_retriever(self):
         embeddings = OpenAIEmbeddings()
-        retriever = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+        retriever = Chroma(collection_name="obsidian_docs", persist_directory="./chroma_db", embedding_function=embeddings)
         return retriever
         
     @contextmanager
@@ -31,6 +31,7 @@ class LangChainProgram:
         with self.create_chat() as chat:
             self.memory.add_user_message(message)
             docs = self.retriever.similarity_search(message, k=5)
+            print(docs)
             messages = [
                 SystemMessage(content="You are a helpful, smart, kind, and efficient AI assistant."),
                 *self.memory.messages,

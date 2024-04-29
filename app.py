@@ -3,9 +3,12 @@ from lang_programs import LangChainProgram
 
 st.title('Mirror')
 
+# Display a sidebar to select the LLM provider
+llm_provider = st.sidebar.selectbox("Select LLM Provider", ["lm-studio", "groq"])
+
 # Initialize LangChainProgram instance and store it in the session state
 if "lang_chain_program" not in st.session_state:
-    st.session_state.lang_chain_program = LangChainProgram()
+    st.session_state.lang_chain_program = LangChainProgram(llm_provider)
 
 # Display chat messages from LangChainProgram's memory
 for message in st.session_state.lang_chain_program.memory.messages:

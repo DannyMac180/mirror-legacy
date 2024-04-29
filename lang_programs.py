@@ -29,14 +29,21 @@ class LangChainProgram:
                                    api_key="lm-studio", 
                                    model="bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp16.gguf",
                                    streaming=True)
+            try:
+                yield self.chat
+            finally:
+                self.chat = None
         elif self.llm_provider == "groq":
-            self.chat = ChatGroq(model_name="groq/llama-3-70b-instruct",
+            self.chat = ChatGroq(model_name="llama3-70b-8192",
                                  groq_api_key=os.getenv("GROQ_API_KEY"),
                                  streaming=True,
                                  temperature=0.7)
+            try:
+                yield self.chat
+            finally:
+                self.chat = None
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
-        return self.chat
 
     def invoke_chat(self, message):
         with self.create_chat() as chat:
@@ -48,12 +55,7 @@ class LangChainProgram:
                 *[HumanMessage(content=doc.page_content) for doc in docs]
             ]
             response = ""
-            if self.llm_provider == "lm-studio":
-                for chunk in chat.stream(messages):
-                    response += chunk.content
-                    yield response
-            elif self.llm_provider == "groq":
-                for chunk in chat.agenerate(messages):
-                    response += chunk.content
-                    yield response
+            for chunk in chat.stream(messages):
+                response += chunk.content
+                yield response
             self.memory.add_ai_message(response)

@@ -5,10 +5,17 @@ from contextlib import contextmanager
 from langchain.memory import ChatMessageHistory
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
+import phoenix as px
+from phoenix.trace.langchain import LangChainInstrumentor
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+session = px.launch_app()
+print(session.url)
+
+LangChainInstrumentor().instrument()
 
 class LangChainProgram:
     def __init__(self, llm_provider):

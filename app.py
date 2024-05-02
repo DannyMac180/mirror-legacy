@@ -33,8 +33,14 @@ if prompt := st.chat_input("What is up?"):
                                 
                 response = st.session_state.lang_chain_program.invoke_chat(prompt)
                 
+                # Initialize an empty string to accumulate the response
+                accumulated_response = ""
+
                 # Stream the response chunks
                 for chunk in response:
-                    response_container.markdown(chunk)
+                    accumulated_response += chunk  # Append the new chunk to the accumulated response
+                    response_container.markdown(accumulated_response)  # Display the accumulated response
+
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
+

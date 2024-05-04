@@ -2,7 +2,7 @@
 
 Mirror is a tool for mirroring your own mind back to you using AI.
 
-Using the following tools and frameworks:
+🛠️ Using the following tools and frameworks:
 
 - [LangChain](https://github.com/langchain-ai/langchain) 
 - [LM Studio](https://lmstudio.ai/)

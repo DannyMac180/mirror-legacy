@@ -1,6 +1,6 @@
 # mirror
 
-Mirror is a tool for mirroring your own mind back to you using AI.
+Mirror is a tool for mirroring your own mind back to you using AI. The idea is to capture your thoughts and ideas in Obsidian, and then use AI to answer questions about them in way that is insightful to you.
 
 🛠️ Using the following tools and frameworks:
 

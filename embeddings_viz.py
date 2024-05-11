@@ -1,6 +1,5 @@
 from nomic import atlas
 import chromadb
-from chromadb.utils import embedding_functions
 
 CHROMA_DATA_PATH = "chroma_db/"
 COLLECTION_NAME = "obsidian_docs"

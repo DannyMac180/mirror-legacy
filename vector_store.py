@@ -12,18 +12,33 @@ def update_vector_store():
     # Load documents from Obsidian
     loader = ObsidianLoader(path=os.getenv("OBSIDIAN_PATH"))
     documents = loader.load()
+    if not documents:
+        print("No documents loaded.")
+        return
 
     # Split the documents into chunks
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     docs = text_splitter.split_documents(documents)
+    if not docs:
+        print("No documents after splitting.")
+        return
 
     # Create an instance of OpenAIEmbeddings
     embeddings = OpenAIEmbeddings()
+    if not embeddings:
+        print("Embeddings instance not created.")
+        return
 
     # Initialize the vector store
     db = Chroma.from_documents(docs, embeddings, persist_directory="./chroma_db", collection_name="obsidian_docs")
+    if not db:
+        print("Chroma vector store not initialized.")
+        return
 
     collection_data = db.get()
+    if 'embeddings' not in collection_data:
+        print("Embeddings not found in collection data.")
+        return
     print(collection_data['embeddings'])
     
     namespace = "chroma/obsidian_docs"  # Use an appropriate namespace
@@ -33,7 +48,7 @@ def update_vector_store():
     record_manager.create_schema()
 
     # Index the documents using the `index` method
-    indexing_result = index(docs, record_manager, db, cleanup='')
+    indexing_result = index(docs, record_manager, db, cleanup='full')
     print(indexing_result)
     
 # Run the function to update the vector store

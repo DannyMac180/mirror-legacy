@@ -1,15 +1,16 @@
 from nomic import atlas
-import chromadb
+from langchain.vectorstores import Chroma
 
 CHROMA_DATA_PATH = "chroma_db/"
 COLLECTION_NAME = "obsidian_docs"
 
-client = chromadb.PersistentClient(path=CHROMA_DATA_PATH)
-collection = client.get_collection(COLLECTION_NAME)
+collection = Chroma.get(collection_name=COLLECTION_NAME, persist_directory=CHROMA_DATA_PATH)
+print(collection)
 
-collection_data = collection.get()
+# collection_data = collection.get()
 
-embeddings = collection_data["embeddings"]
+# embeddings = collection_data["embeddings"]
+# print(embeddings)
 
 # Assuming 'embeddings' is a numpy array of your embeddings
-dataset = atlas.map_data(embeddings=embeddings)
+# dataset = atlas.map_data(embeddings=embeddings)

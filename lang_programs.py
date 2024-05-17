@@ -44,6 +44,10 @@ class LangChainProgram:
                             groq_api_key=os.getenv("GROQ_API_KEY"),
                             streaming=True,
                             temperature=0.7)
+        elif self.llm_provider == "gpt-4o":
+            return ChatOpenAI(model="gpt-4o",
+                              api_key=os.getenv("OPENAI_API_KEY"),
+                              streaming=True)
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
 

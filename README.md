@@ -10,6 +10,12 @@ Mirror is a tool for mirroring your own mind back to you using AI. The idea is t
 - [Groq](https://groq.com/)
 - [Chroma](https://trychroma.com/)
 
+Available LLMs:
+
+- GPT-4o
+- LM Studio hosted Llama 3
+- Groq hosted Llama 3
+
 It's a work in progress. Currently, it can index your Obsidian vault and answer questions about it using vector search.
 
 See the [lang_programs.py](lang_programs.py) file for the current capabilities of the tool.

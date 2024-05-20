@@ -1,10 +1,16 @@
-from nomic import atlas
-from langchain.vectorstores import Chroma
+import chromadb
+from chromadb.config import Settings
 
-CHROMA_DATA_PATH = "chroma_db/"
+CHROMA_DATA_PATH = "./chroma_db"
 COLLECTION_NAME = "obsidian_docs"
 
-collection = Chroma.get(collection_name=COLLECTION_NAME, persist_directory=CHROMA_DATA_PATH)
+# Initialize the Chroma client with the persistent directory
+client = chromadb.Client(Settings(persist_directory=CHROMA_DATA_PATH))
+
+# Access the collection (replace 'your_collection_name' with the actual collection name)
+collection = client.get_collection(COLLECTION_NAME)
+
+# Use the collection as needed
 print(collection)
 
 # collection_data = collection.get()

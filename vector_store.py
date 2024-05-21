@@ -1,10 +1,11 @@
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.vectorstores import Chroma
 from langchain.document_loaders import ObsidianLoader
 from langchain.indexes import SQLRecordManager, index
 from dotenv import load_dotenv
 import os
+import chromadb
+from chromadb.config import Settings
 
 load_dotenv()
 
@@ -29,13 +30,14 @@ def update_vector_store():
         print("Embeddings instance not created.")
         return
 
-    # Initialize the vector store
-    db = Chroma.from_documents(docs, embeddings, persist_directory="./chroma_db", collection_name="obsidian_docs")
-    if not db:
-        print("Chroma vector store not initialized.")
-        return
+    # Initialize the Chroma client and collection
+    client = chromadb.Client(Settings(persist_directory="./chroma_db"))
+    collection = client.get_or_create_collection(name="obsidian_docs")
 
-    collection_data = db.get()
+    collection.add(documents=docs, embeddings=embeddings, ids=[doc["id"] for doc in docs])
+
+    # Retrieve and print embeddings from the collection
+    collection_data = collection.get()
     if 'embeddings' not in collection_data:
         print("Embeddings not found in collection data.")
         return
@@ -48,7 +50,7 @@ def update_vector_store():
     record_manager.create_schema()
 
     # Index the documents using the `index` method
-    indexing_result = index(docs, record_manager, db, cleanup='full')
+    indexing_result = index(docs, record_manager, collection, cleanup='full')
     print(indexing_result)
     
 # Run the function to update the vector store

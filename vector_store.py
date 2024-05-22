@@ -1,60 +1,87 @@
-from langchain_openai import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.document_loaders import ObsidianLoader
-from langchain.indexes import SQLRecordManager, index
-from dotenv import load_dotenv
 import os
-import chromadb
-from chromadb.config import Settings
+import hashlib
+import json
+import openai
+from chromadb.api import API
+from chromadb.config import ClientConfig
+from langchain.document_loaders import ObsidianLoader
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
 
-load_dotenv()
+# Initialize Chroma DB
+db_dir = './chroma_db'
+if not os.path.exists(db_dir):
+    os.makedirs(db_dir)
 
-def update_vector_store():
-    # Load documents from Obsidian
-    loader = ObsidianLoader(path=os.getenv("OBSIDIAN_PATH"))
-    documents = loader.load()
-    if not documents:
-        print("No documents loaded.")
-        return
+config = ClientConfig(storage_path=db_dir)
+client = API(config)
 
-    # Split the documents into chunks
-    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    docs = text_splitter.split_documents(documents)
-    if not docs:
-        print("No documents after splitting.")
-        return
+# Create or get the collection named "obsidian_docs"
+collection_name = "obsidian_docs"
+if collection_name not in client.list_collections():
+    client.create_collection(collection_name)
+collection = client.get_collection(collection_name)
 
-    # Create an instance of OpenAIEmbeddings
-    embeddings = OpenAIEmbeddings()
-    if not embeddings:
-        print("Embeddings instance not created.")
-        return
+# Load Obsidian vault documents using LangChain
+vault_path = '/path/to/your/obsidian/vault'
+loader = ObsidianLoader(vault_path)
+documents = loader.load()
 
-    # Initialize the Chroma client and collection
-    client = chromadb.Client(Settings(persist_directory="./chroma_db"))
-    collection = client.get_or_create_collection(name="obsidian_docs")
+# Function to calculate document hash
+def calculate_hash(content):
+    return hashlib.md5(content.encode()).hexdigest()
 
-    collection.add(documents=docs, embeddings=embeddings, ids=[doc["id"] for doc in docs])
+# Initialize LangChain text splitter
+text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 
-    # Retrieve and print embeddings from the collection
-    collection_data = collection.get()
-    if 'embeddings' not in collection_data:
-        print("Embeddings not found in collection data.")
-        return
-    print(collection_data['embeddings'])
+# Initialize LangChain embeddings
+openai.api_key = 'your-openai-api-key'
+embeddings = OpenAIEmbeddings()
+
+# Load previously indexed documents
+indexed_docs_file = 'indexed_docs.json'
+if os.path.exists(indexed_docs_file):
+    with open(indexed_docs_file, 'r') as f:
+        indexed_docs = json.load(f)
+else:
+    indexed_docs = {}
+
+# Track current job run documents
+current_docs = {}
+
+for doc in documents:
+    content = doc.page_content
+    file_path = doc.metadata['source']
     
-    namespace = "chroma/obsidian_docs"  # Use an appropriate namespace
-    record_manager = SQLRecordManager(
-        namespace, db_url="sqlite:///record_manager_cache.sql"
-    )
-    record_manager.create_schema()
-
-    # Index the documents using the `index` method
-    indexing_result = index(docs, record_manager, collection, cleanup='full')
-    print(indexing_result)
+    # Calculate file hash to detect changes
+    file_hash = calculate_hash(content)
+    if file_path in indexed_docs and indexed_docs[file_path] == file_hash:
+        continue
     
-# Run the function to update the vector store
-update_vector_store()
+    # Split text into chunks
+    chunks = text_splitter.split_text(content)
+    
+    # Embed each chunk
+    chunk_embeddings = embeddings.embed_documents(chunks)
+    
+    for i, embedding in enumerate(chunk_embeddings):
+        chunk_id = f"{file_path}:{i}"
+        metadata = {'file_path': file_path, 'chunk_index': i}
+        collection.upsert(embedding, id=chunk_id, metadata=metadata)
+    
+    current_docs[file_path] = file_hash
 
-# Schedule the job to run periodically (e.g., every 24 hours)
-# Use a scheduler like `cron` or `apscheduler` to run `update_vector_store()`
+# Save current indexed documents
+with open(indexed_docs_file, 'w') as f:
+    json.dump(current_docs, f)
+
+# Remove deleted documents from Chroma DB
+deleted_docs = set(indexed_docs.keys()) - set(current_docs.keys())
+for file_path in deleted_docs:
+    chunks = text_splitter.split_text(open(file_path, 'r', encoding='utf-8').read())
+    for i in range(len(chunks)):
+        chunk_id = f"{file_path}:{i}"
+        collection.delete(id=chunk_id)
+
+print("Chroma DB update complete.")

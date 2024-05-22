@@ -7,7 +7,9 @@ from chromadb.config import ClientConfig
 from langchain.document_loaders import ObsidianLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize Chroma DB
 db_dir = './chroma_db'
@@ -24,7 +26,7 @@ if collection_name not in client.list_collections():
 collection = client.get_collection(collection_name)
 
 # Load Obsidian vault documents using LangChain
-vault_path = '/path/to/your/obsidian/vault'
+vault_path = os.getenv('OBSIDIAN_PATH')
 loader = ObsidianLoader(vault_path)
 documents = loader.load()
 
@@ -36,7 +38,7 @@ def calculate_hash(content):
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 
 # Initialize LangChain embeddings
-openai.api_key = 'your-openai-api-key'
+openai.api_key = os.getenv('OPENAI_API_KEY')
 embeddings = OpenAIEmbeddings()
 
 # Load previously indexed documents

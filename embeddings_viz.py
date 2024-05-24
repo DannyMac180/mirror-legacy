@@ -5,7 +5,7 @@ CHROMA_DATA_PATH = "./chroma_db"
 COLLECTION_NAME = "obsidian_docs"
 
 # Initialize the Chroma client with the persistent directory
-client = chromadb.Client(persist_directory=CHROMA_DATA_PATH)
+client = chromadb.Client(Settings(persist_directory=CHROMA_DATA_PATH))
 
 # Access the collection (replace 'your_collection_name' with the actual collection name)
 collection = client.get_collection(COLLECTION_NAME)

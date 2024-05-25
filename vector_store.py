@@ -2,8 +2,7 @@ import os
 import hashlib
 import json
 import openai
-from chromadb import Client
-from chromadb.config import ClientConfig
+from chromadb import Client, Settings
 from langchain.document_loaders import ObsidianLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
@@ -16,8 +15,8 @@ db_dir = './chroma_db'
 if not os.path.exists(db_dir):
     os.makedirs(db_dir)
 
-config = ClientConfig(storage_path=db_dir)
-client = Client(config)
+settings = Settings(persist_directory=db_dir)
+client = Client(settings=settings)
 
 # Create or get the collection named "obsidian_docs"
 collection_name = "obsidian_docs"

@@ -69,7 +69,7 @@ for doc in documents:
     for i, embedding in enumerate(chunk_embeddings):
         chunk_id = f"{file_path}:{i}"
         metadata = {'file_path': file_path, 'chunk_index': i}
-        collection.upsert(embedding, id=chunk_id, metadata=metadata)
+        collection.upsert(embedding, ids=chunk_id, metadata=metadata)
     
     current_docs[file_path] = file_hash
 

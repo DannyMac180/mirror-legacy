@@ -22,6 +22,7 @@ client = Client(settings=settings)
 collection_name = "obsidian_docs"
 if collection_name not in client.list_collections():
     client.create_collection(collection_name)
+    print(f"Collection '{collection_name}' created successfully.")
 collection = client.get_collection(collection_name)
 
 # Load Obsidian vault documents using LangChain
@@ -54,6 +55,7 @@ current_docs = {}
 for doc in documents:
     content = doc.page_content
     file_path = doc.metadata['source']
+    print(f"Processing document: {file_path}")
     
     # Calculate file hash to detect changes
     file_hash = calculate_hash(content)
@@ -69,6 +71,7 @@ for doc in documents:
     for i, embedding in enumerate(chunk_embeddings):
         chunk_id = f"{file_path}:{i}"
         metadata = {'file_path': file_path, 'chunk_index': i}
+        print(f"Upserting chunk: {chunk_id}")
         collection.upsert(embeddings=embedding, ids=chunk_id, metadatas=metadata)
     
     current_docs[file_path] = file_hash
@@ -86,3 +89,4 @@ for file_path in deleted_docs:
         collection.delete(id=chunk_id)
 
 print("Chroma DB update complete.")
+print(f"Number of elements in the collection: {collection.count()}")

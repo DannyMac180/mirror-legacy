@@ -18,13 +18,6 @@ if not os.path.exists(db_dir):
 settings = Settings(persist_directory=db_dir)
 client = Client(settings=settings)
 
-# Create or get the collection named "obsidian_docs"
-collection_name = "obsidian_docs"
-if collection_name not in client.list_collections():
-    client.create_collection(collection_name)
-    print(f"Collection '{collection_name}' created successfully.")
-collection = client.get_collection(collection_name)
-
 # Load Obsidian vault documents using LangChain
 vault_path = os.getenv('OBSIDIAN_PATH')
 loader = ObsidianLoader(vault_path)
@@ -68,25 +61,10 @@ for doc in documents:
     # Embed each chunk
     chunk_embeddings = embeddings.embed_documents(chunks)
     
-    for i, embedding in enumerate(chunk_embeddings):
-        chunk_id = f"{file_path}:{i}"
-        metadata = {'file_path': file_path, 'chunk_index': i}
-        print(f"Upserting chunk: {chunk_id}")
-        collection.upsert(embeddings=embedding, ids=chunk_id, metadatas=metadata)
-    
     current_docs[file_path] = file_hash
 
 # Save current indexed documents
 with open(indexed_docs_file, 'w') as f:
     json.dump(current_docs, f)
 
-# Remove deleted documents from Chroma DB
-deleted_docs = set(indexed_docs.keys()) - set(current_docs.keys())
-for file_path in deleted_docs:
-    chunks = text_splitter.split_text(open(file_path, 'r', encoding='utf-8').read())
-    for i in range(len(chunks)):
-        chunk_id = f"{file_path}:{i}"
-        collection.delete(id=chunk_id)
-
-print("Chroma DB update complete.")
-print(f"Number of elements in the collection: {collection.count()}")
+print("Chroma DB initialization complete.")

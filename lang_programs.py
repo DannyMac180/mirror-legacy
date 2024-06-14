@@ -30,7 +30,7 @@ class LangChainProgram:
         
     def load_retriever(self):
         embeddings = OpenAIEmbeddings()
-        retriever = Chroma(collection_name="obsidian_docs", persist_directory="./chroma_db", embedding_function=embeddings)
+        retriever = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
         return retriever
         
     def create_llm(self):

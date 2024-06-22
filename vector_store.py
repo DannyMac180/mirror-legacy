@@ -61,6 +61,16 @@ for doc in documents:
     # Embed each chunk
     chunk_embeddings = embeddings.embed_documents(chunks)
     
+    # Add embeddings to ChromaDB
+    collection_name = 'obisidan_docs'
+    collection = client.get_or_create_collection(name=collection_name)
+    for i, (chunk, embedding) in enumerate(zip(chunks, chunk_embeddings)):
+        collection.add(
+            embeddings=[embedding],
+            documents=[chunk],
+            ids=[f"{file_path}_chunk_{i}"]
+        )
+    
     current_docs[file_path] = file_hash
 
 # Save current indexed documents

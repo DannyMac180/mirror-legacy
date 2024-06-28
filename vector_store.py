@@ -33,6 +33,9 @@ text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 # Initialize LangChain embeddings
 openai.api_key = os.getenv('OPENAI_API_KEY')
 embeddings = OpenAIEmbeddings()
+# Extract text content from the first 5 documents and embed
+document_texts = [doc.page_content for doc in documents[:5]]
+print(embeddings.embed_documents(document_texts))
 
 # Load previously indexed documents
 indexed_docs_file = 'indexed_docs.json'
@@ -62,9 +65,10 @@ for doc in documents:
     chunk_embeddings = embeddings.embed_documents(chunks)
     
     # Add embeddings to ChromaDB
-    collection_name = 'obisidan_docs'
+    collection_name = 'obsidian_docs'
     collection = client.get_or_create_collection(name=collection_name)
     for i, (chunk, embedding) in enumerate(zip(chunks, chunk_embeddings)):
+        print(f"Adding embedding: {embedding} to collection {collection_name}")
         collection.add(
             embeddings=[embedding],
             documents=[chunk],

@@ -1,84 +1,59 @@
+import weaviate
+import weaviate.classes as wvc
 import os
-import hashlib
+import requests
 import json
-import openai
-from chromadb import Client, Settings
-from langchain.document_loaders import ObsidianLoader
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
 from dotenv import load_dotenv
+from langchain.document_loaders import ObsidianLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from datetime import datetime
 
 load_dotenv()
 
-# Initialize Chroma DB
-db_dir = './chroma_db'
-if not os.path.exists(db_dir):
-    os.makedirs(db_dir)
+client = weaviate.connect_to_weaviate_cloud(
+    cluster_url=os.getenv("WEAVIATE_URL"),
+    auth_credentials=weaviate.auth.AuthApiKey(os.getenv("WEAVIATE_API_KEY")),
+    headers={
+        "X-OpenAI-Api-Key": os.environ["OPENAI_API_KEY"]  # Replace with your inference API key
+    }
+)
 
-settings = Settings(persist_directory=db_dir)
-client = Client(settings=settings)
-
-# Load Obsidian vault documents using LangChain
-vault_path = os.getenv('OBSIDIAN_PATH')
-loader = ObsidianLoader(vault_path)
-documents = loader.load()
-
-# Function to calculate document hash
-def calculate_hash(content):
-    return hashlib.md5(content.encode()).hexdigest()
-
-# Initialize LangChain text splitter
-text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-
-# Initialize LangChain embeddings
-openai.api_key = os.getenv('OPENAI_API_KEY')
-embeddings = OpenAIEmbeddings()
-# Extract text content from the first 5 documents and embed
-document_texts = [doc.page_content for doc in documents[:5]]
-print(embeddings.embed_documents(document_texts))
-
-# Load previously indexed documents
-indexed_docs_file = 'indexed_docs.json'
-if os.path.exists(indexed_docs_file):
-    with open(indexed_docs_file, 'r') as f:
-        indexed_docs = json.load(f)
-else:
-    indexed_docs = {}
-
-# Track current job run documents
-current_docs = {}
-
-for doc in documents:
-    content = doc.page_content
-    file_path = doc.metadata['source']
-    print(f"Processing document: {file_path}")
+try:
+    # obsidian_docs = client.collections.create(
+    #     name="ObsidianDocs",
+    #     vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),  # If set to "none" you must always provide vectors yourself. Could be any other "text2vec-*" also.
+    #     generative_config=wvc.config.Configure.Generative.openai()  # Ensure the `generative-openai` module is used for generative queries
+    # )
     
-    # Calculate file hash to detect changes
-    file_hash = calculate_hash(content)
-    if file_path in indexed_docs and indexed_docs[file_path] == file_hash:
-        continue
-    
-    # Split text into chunks
-    chunks = text_splitter.split_text(content)
-    
-    # Embed each chunk
-    chunk_embeddings = embeddings.embed_documents(chunks)
-    
-    # Add embeddings to ChromaDB
-    collection_name = 'obsidian_docs'
-    collection = client.get_or_create_collection(name=collection_name)
-    for i, (chunk, embedding) in enumerate(zip(chunks, chunk_embeddings)):
-        print(f"Adding embedding: {embedding} to collection {collection_name}")
-        collection.add(
-            embeddings=[embedding],
-            documents=[chunk],
-            ids=[f"{file_path}_chunk_{i}"]
-        )
-    
-    current_docs[file_path] = file_hash
+    obsidian_docs = client.collections.get("ObsidianDocs")
 
-# Save current indexed documents
-with open(indexed_docs_file, 'w') as f:
-    json.dump(current_docs, f)
+    # Load documents from Obsidian vault
+    obsidian_path = os.getenv("OBSIDIAN_PATH")
+    loader = ObsidianLoader(obsidian_path)
+    documents = loader.load()
+    
+    # Split documents
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splits = text_splitter.split_documents(documents)
 
-print("Chroma DB initialization complete.")
+    # Prepare data for Weaviate
+    obsidian_objects = []
+    for doc in splits:
+        # Extract metadata
+        print(f"Processing document: {doc.metadata.get('source')}")
+        # Create object
+        obj = {
+            "content": doc.page_content,
+            "title": doc.metadata.get('source'),
+            "created": doc.metadata.get('created'),
+            "path": doc.metadata.get('path')
+        }
+        obsidian_objects.append(obj)
+
+        # Insert data into Weaviate
+        obsidian_docs.data.insert_many(obsidian_objects)
+
+        print(f"Inserted {len(obsidian_objects)} documents into Weaviate.")
+
+finally:
+    client.close()  # Close client gracefully

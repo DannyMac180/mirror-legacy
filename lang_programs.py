@@ -1,8 +1,8 @@
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain.memory import ChatMessageHistory
-from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+import weaviate
+from langchain_community.vectorstores import Weaviate
 import phoenix as px
 from phoenix.trace.langchain import LangChainInstrumentor
 import os
@@ -26,11 +26,18 @@ class LangChainProgram:
         self.retriever = self.load_retriever()
         self.retrieval_qa_chat_prompt = hub.pull("langchain-ai/retrieval-qa-chat")
         self.combine_docs_chain = create_stuff_documents_chain(self.llm, self.retrieval_qa_chat_prompt)
-        self.retrieval_chain = create_retrieval_chain(self.retriever.as_retriever(search_kwargs={"k": 5}), self.combine_docs_chain)
+        self.retrieval_chain = create_retrieval_chain(self.retriever, self.combine_docs_chain)
         
     def load_retriever(self):
-        embeddings = OpenAIEmbeddings()
-        retriever = Chroma(persist_directory="./chroma_db", embedding_function=embeddings, collection_name="obsidian_docs")
+        client = weaviate.Client(
+            url=os.getenv("WEAVIATE_URL"),
+            auth_client_secret=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
+            additional_headers = {
+                "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
+            }
+        )
+        vectorstore = Weaviate(client, "ObsidianDocs", "content", attributes=["title"])
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
         return retriever
         
     def create_llm(self):

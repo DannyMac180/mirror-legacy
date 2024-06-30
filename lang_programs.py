@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain import hub
+import json
 
 load_dotenv()
 
@@ -70,3 +71,15 @@ class LangChainProgram:
                 yield answer  # Yield only the answer part of the chunk
         # Add the AI response to the chain's memory
         self.memory.add_ai_message(response)
+
+    def inspect_documents(self):
+        results = self.retriever.get_relevant_documents("sample query")
+        for i, doc in enumerate(results):
+            print(f"Document {i+1}:")
+            print(f"Content: {doc.page_content[:500]}...")  # Print first 500 chars
+            print(f"Metadata: {doc.metadata}")
+            print("---")
+
+    def print_schema(self):
+        schema = self.retriever.vectorstore.client.schema.get("ObsidianDocs")
+        print(json.dumps(schema, indent=2))

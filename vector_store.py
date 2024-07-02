@@ -1,59 +1,87 @@
-import weaviate
-import weaviate.classes as wvc
 import os
-import requests
 import json
-from dotenv import load_dotenv
-from langchain.document_loaders import ObsidianLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import hashlib
 from datetime import datetime
+from langchain.document_loaders import ObsidianLoader
+from langchain.vectorstores import Weaviate
+import weaviate
+from dotenv import load_dotenv
 
 load_dotenv()
 
-client = weaviate.connect_to_weaviate_cloud(
-    cluster_url=os.getenv("WEAVIATE_URL"),
-    auth_credentials=weaviate.auth.AuthApiKey(os.getenv("WEAVIATE_API_KEY")),
-    headers={
-        "X-OpenAI-Api-Key": os.environ["OPENAI_API_KEY"]  # Replace with your inference API key
-    }
-)
+# Path to your Obsidian vault
+OBS_VAULT_PATH = os.getenv('OBSIDIAN_PATH')
+# Path to the index file
+INDEX_FILE_PATH = 'docs_inserted_index.json'
+# Weaviate client configuration
+WEAVIATE_URL = 'https://mirror-cluster-t3a5zsyf.weaviate.network'
 
-try:
-    # obsidian_docs = client.collections.create(
-    #     name="ObsidianDocs",
-    #     vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),  # If set to "none" you must always provide vectors yourself. Could be any other "text2vec-*" also.
-    #     generative_config=wvc.config.Configure.Generative.openai()  # Ensure the `generative-openai` module is used for generative queries
-    # )
-    
-    obsidian_docs = client.collections.get("ObsidianDocs")
+def load_index():
+    if os.path.exists(INDEX_FILE_PATH):
+        try:
+            with open(INDEX_FILE_PATH, 'r') as f:
+                content = f.read()
+                if content.strip():  # Check if file is not empty
+                    return json.loads(content)
+                else:
+                    print(f"Warning: {INDEX_FILE_PATH} is empty. Returning empty dict.")
+        except json.JSONDecodeError:
+            print(f"Error: {INDEX_FILE_PATH} contains invalid JSON. Returning empty dict.")
+    else:
+        print(f"Info: {INDEX_FILE_PATH} does not exist. Returning empty dict.")
+    return {}
 
-    # Load documents from Obsidian vault
-    obsidian_path = os.getenv("OBSIDIAN_PATH")
-    loader = ObsidianLoader(obsidian_path)
-    documents = loader.load()
-    
-    # Split documents
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    splits = text_splitter.split_documents(documents)
+def save_index(index):
+    with open(INDEX_FILE_PATH, 'w') as f:
+        json.dump(index, f, indent=4)
 
-    # Prepare data for Weaviate
-    obsidian_objects = []
-    for doc in splits:
-        # Extract metadata
-        print(f"Processing document: {doc.metadata.get('source')}")
-        # Create object
-        obj = {
-            "content": doc.page_content,
-            "title": doc.metadata.get('source'),
-            "created": doc.metadata.get('created'),
-            "path": doc.metadata.get('path')
-        }
-        obsidian_objects.append(obj)
+def get_file_hash(file_path):
+    hasher = hashlib.md5()
+    with open(file_path, 'rb') as f:
+        buf = f.read()
+        hasher.update(buf)
+    return hasher.hexdigest()
 
-        # Insert data into Weaviate
-        obsidian_docs.data.insert_many(obsidian_objects)
+def get_new_documents(obsidian_loader, index):
+    new_docs = []
+    for doc in obsidian_loader.load():
+        file_path = doc.metadata.get('source')  # Assuming 'source' contains the file path
+        file_hash = get_file_hash(file_path)
+        if file_hash not in index:
+            index[file_hash] = datetime.now().isoformat()
+            new_docs.append(doc)
+    return new_docs
 
-        print(f"Inserted {len(obsidian_objects)} documents into Weaviate.")
+def insert_documents_to_weaviate(client, documents):
+    for doc in documents:
+        client.batch.add_data_object(
+            {
+                "content": doc.page_content,
+                "file_name": doc.metadata["file_name"],
+                "file_path": doc.metadata["file_path"],
+                "created_at": doc.metadata["created"],
+                "last_modified": doc.metadata["last_modified"],
+            },
+            "ObsidianDocs"
+        )
+    client.batch.flush()
 
-finally:
-    client.close()  # Close client gracefully
+def main():
+    index = load_index()
+
+    obsidian_loader = ObsidianLoader(OBS_VAULT_PATH)
+    new_documents = get_new_documents(obsidian_loader, index)
+
+    if not new_documents:
+        print("No new documents found.")
+        return
+
+    client = weaviate.Client(WEAVIATE_URL, auth_client_secret=os.getenv('WEAVIATE_API_KEY'))
+
+    insert_documents_to_weaviate(client, new_documents)
+
+    save_index(index)
+    print(f"Inserted {len(new_documents)} new documents into Weaviate.")
+
+if __name__ == "__main__":
+    main()

@@ -88,7 +88,7 @@ def main():
         print("No new documents found.")
         return
 
-    client = weaviate.Client(
+    client = weaviate.connect_to_weaviate_cloud(
         url=WEAVIATE_URL,
         auth_credentials=weaviate.auth.AuthCredentials(api_key=os.getenv('WEAVIATE_API_KEY')),
         additional_headers={

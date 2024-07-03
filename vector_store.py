@@ -3,7 +3,6 @@ import json
 import hashlib
 from datetime import datetime
 from langchain.document_loaders import ObsidianLoader
-from langchain.vectorstores import Weaviate
 import weaviate
 from dotenv import load_dotenv
 
@@ -37,19 +36,31 @@ def save_index(index):
 
 def get_file_hash(file_path):
     hasher = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        buf = f.read()
-        hasher.update(buf)
-    return hasher.hexdigest()
+    try:
+        with open(file_path, 'rb') as f:
+            buf = f.read()
+            hasher.update(buf)
+        return hasher.hexdigest()
+    except FileNotFoundError:
+        print(f"Warning: File not found: {file_path}")
+        return None
 
 def get_new_documents(obsidian_loader, index):
     new_docs = []
     for doc in obsidian_loader.load():
-        file_path = doc.metadata.get('source')  # Assuming 'source' contains the file path
-        file_hash = get_file_hash(file_path)
-        if file_hash not in index:
-            index[file_hash] = datetime.now().isoformat()
-            new_docs.append(doc)
+        file_path = doc.metadata.get('source')
+        if file_path is None:
+            print(f"Warning: Document has no source path. Skipping. Content preview: {doc.page_content[:100]}...")
+            continue
+        
+        try:
+            file_hash = get_file_hash(file_path)
+            if file_hash not in index:
+                index[file_hash] = datetime.now().isoformat()
+                new_docs.append(doc)
+        except Exception as e:
+            print(f"Error processing file {file_path}: {str(e)}")
+    
     return new_docs
 
 def insert_documents_to_weaviate(client, documents):
@@ -57,10 +68,11 @@ def insert_documents_to_weaviate(client, documents):
         client.batch.add_data_object(
             {
                 "content": doc.page_content,
-                "file_name": doc.metadata["file_name"],
-                "file_path": doc.metadata["file_path"],
-                "created_at": doc.metadata["created"],
+                "source": doc.metadata["source"],
+                "path": doc.metadata["path"],
+                "created": doc.metadata["created"],
                 "last_modified": doc.metadata["last_modified"],
+                "last_accessed": doc.metadata["last_accessed"],
             },
             "ObsidianDocs"
         )
@@ -76,7 +88,13 @@ def main():
         print("No new documents found.")
         return
 
-    client = weaviate.Client(WEAVIATE_URL, auth_client_secret=os.getenv('WEAVIATE_API_KEY'))
+    client = weaviate.Client(
+        url=WEAVIATE_URL,
+        auth_credentials=weaviate.auth.AuthCredentials(api_key=os.getenv('WEAVIATE_API_KEY')),
+        additional_headers={
+            "X-OpenAI-Api-Key": os.getenv('OPENAI_API_KEY')  # Make sure this environment variable is set
+        }
+    )
 
     insert_documents_to_weaviate(client, new_documents)
 

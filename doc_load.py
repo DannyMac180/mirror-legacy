@@ -13,6 +13,7 @@ loader = ObsidianLoader(obsidian_path)
 
 # Load the documents
 documents = loader.load()
+print(len(documents))
 
 # Print the first document object for inspection
 if documents:

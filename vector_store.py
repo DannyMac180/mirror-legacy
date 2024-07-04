@@ -2,8 +2,9 @@ import os
 import json
 import hashlib
 from datetime import datetime
-from langchain.document_loaders import ObsidianLoader
+from langchain_community.document_loaders import ObsidianLoader
 import weaviate
+import weaviate.classes as wvc
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -48,7 +49,7 @@ def get_file_hash(file_path):
 def get_new_documents(obsidian_loader, index):
     new_docs = []
     for doc in obsidian_loader.load():
-        file_path = doc.metadata.get('source')
+        file_path = doc.metadata.get('path')
         if file_path is None:
             print(f"Warning: Document has no source path. Skipping. Content preview: {doc.page_content[:100]}...")
             continue
@@ -88,18 +89,75 @@ def main():
         print("No new documents found.")
         return
 
-    client = weaviate.connect_to_weaviate_cloud(
-        url=WEAVIATE_URL,
-        auth_credentials=weaviate.auth.AuthCredentials(api_key=os.getenv('WEAVIATE_API_KEY')),
-        additional_headers={
-            "X-OpenAI-Api-Key": os.getenv('OPENAI_API_KEY')  # Make sure this environment variable is set
+    client = weaviate.connect_to_wcs(
+        cluster_url=os.getenv("WEAVIATE_URL"),  # Replace with your actual WCS cluster URL
+        auth_credentials=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),  # Replace with your Weaviate API key
+        headers={
+            "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")  # Replace with your OpenAI API key
         }
     )
-
+    
+    # Check if the collection already exists, if not, create it
+    if "ObsidianDocs" not in client.collections:
+        obsidian_docs = client.collections.create(
+            name="ObsidianDocs",
+            vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),
+            generative_config=wvc.config.Configure.Generative.openai()
+        )
+        
+        # Add properties to the collection
+        obsidian_docs.properties.create(
+            name="content",
+            data_type=wvc.data_type.Text()
+        )
+        obsidian_docs.properties.create(
+            name="source",
+            data_type=wvc.data_type.Text()
+        )
+        obsidian_docs.properties.create(
+            name="path",
+            data_type=wvc.data_type.Text()
+        )
+        obsidian_docs.properties.create(
+            name="created",
+            data_type=wvc.data_type.Date()
+        )
+        obsidian_docs.properties.create(
+            name="last_modified",
+            data_type=wvc.data_type.Date()
+        )
+        obsidian_docs.properties.create(
+            name="last_accessed",
+            data_type=wvc.data_type.Date()
+        )
+        
+        print("Created ObsidianDocs collection in Weaviate.")
+    else:
+        print("ObsidianDocs collection already exists in Weaviate.")
+    
+    print("Inserting new documents:")
+    for i, doc in enumerate(new_documents, 1):
+        print(f"{i}. {doc.metadata.get('path', 'Unknown path')}")
+    
     insert_documents_to_weaviate(client, new_documents)
 
     save_index(index)
     print(f"Inserted {len(new_documents)} new documents into Weaviate.")
+
+def insert_documents_to_weaviate(client, documents):
+    obsidian_docs = client.collections.get("ObsidianDocs")
+    with obsidian_docs.batch.dynamic() as batch:
+        for doc in documents:
+            batch.add_object(
+                properties={
+                    "content": doc.page_content,
+                    "source": doc.metadata["source"],
+                    "path": doc.metadata["path"],
+                    "created": doc.metadata["created"],
+                    "last_modified": doc.metadata["last_modified"],
+                    "last_accessed": doc.metadata["last_accessed"],
+                }
+            )
 
 if __name__ == "__main__":
     main()

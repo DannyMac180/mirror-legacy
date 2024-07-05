@@ -1,8 +1,9 @@
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain.memory import ChatMessageHistory
+from langchain.vectorstores import Weaviate
+from langchain.embeddings import OpenAIEmbeddings
 import weaviate
-from langchain_community.vectorstores import Weaviate
 import phoenix as px
 from phoenix.trace.langchain import LangChainInstrumentor
 import os
@@ -31,15 +32,21 @@ class LangChainProgram:
         
     def load_retriever(self):
         client = weaviate.Client(
-            url=os.getenv("WEAVIATE_URL"),
-            auth_client_secret=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
-            additional_headers = {
+            url=os.getenv("WEAVIATE_CLUSTER_URL"),
+            auth_client_secret=weaviate.AuthApiKey(os.getenv("WEAVIATE_API_KEY")),
+            additional_headers={
                 "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
             }
         )
-        vectorstore = Weaviate(client, "ObsidianNotes", "content", attributes=["title"])
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
-        return retriever
+
+        vectorstore = Weaviate(
+            client=client,
+            index_name="ObsidianNotes",
+            text_key="content",
+            embedding=OpenAIEmbeddings()
+        )
+
+        return vectorstore.as_retriever(search_kwargs={"k": 4})
         
     def create_llm(self):
         if self.llm_provider == "lm-studio":
@@ -64,22 +71,20 @@ class LangChainProgram:
         response = ""
         
         for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}):
-            # Assuming each chunk is a dictionary and the answer is stored under the 'answer' key
             if 'answer' in chunk:
                 answer = chunk['answer']
-                response += answer  # Append only the answer to the full response
-                yield answer  # Yield only the answer part of the chunk
-        # Add the AI response to the chain's memory
+                response += answer
+                yield answer
         self.memory.add_ai_message(response)
 
     def inspect_documents(self):
         results = self.retriever.get_relevant_documents("sample query")
         for i, doc in enumerate(results):
             print(f"Document {i+1}:")
-            print(f"Content: {doc.page_content[:500]}...")  # Print first 500 chars
+            print(f"Content: {doc.page_content[:500]}...")
             print(f"Metadata: {doc.metadata}")
             print("---")
 
     def print_schema(self):
-        schema = self.retriever.vectorstore.client.schema.get("ObsidianDocs")
+        schema = self.retriever.client.schema.get("ObsidianNotes")
         print(json.dumps(schema, indent=2))

@@ -30,7 +30,7 @@ def get_cluster_metadata():
 def query_weaviate(query, k=5):
     # Initialize Weaviate client
     client = weaviate.Client(
-        url=os.getenv("WEAVIATE_URL"),
+        url=os.getenv("WEAVIATE_CLUSTER_URL"),
         auth_client_secret=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
         additional_headers={
             "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
@@ -60,7 +60,7 @@ def query_weaviate(query, k=5):
 
 # Example usage
 if __name__ == "__main__":
-    get_cluster_metadata()
-    # query = input("Enter your search query: ")
-    # k = int(input("Enter the number of documents to retrieve: "))
-    # query_weaviate(query, k)
+    # get_cluster_metadata()
+    query = input("Enter your search query: ")
+    k = int(input("Enter the number of documents to retrieve: "))
+    query_weaviate(query, k)

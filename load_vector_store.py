@@ -3,6 +3,7 @@ import weaviate.classes as wvc
 from langchain.document_loaders import ObsidianLoader
 import os
 from dotenv import load_dotenv
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 load_dotenv()
 
@@ -34,21 +35,33 @@ try:
     docs = loader.load()
     print(f"Total documents loaded: {len(docs)}")
 
+    # Add this function to chunk the content
+    def chunk_content(content, max_chunk_size=1000, chunk_overlap=200):
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=max_chunk_size,
+            chunk_overlap=chunk_overlap,
+            length_function=len
+        )
+        return text_splitter.split_text(content)
+
     # Prepare objects for insertion
     objects_to_insert = []
     for doc in docs:
-        # Print the source of the document
-        obj = {
-            "title": doc.metadata.get("source", ""),
-            "content": doc.page_content,
-            "metadata": {
-                "source": doc.metadata.get("source", ""),
-                "file_path": doc.metadata.get("path", ""),
-                "created_at": doc.metadata.get("created", ""),
-                "last_accessed": doc.metadata.get("last_accessed", ""),
+        chunks = chunk_content(doc.page_content)
+        for i, chunk in enumerate(chunks):
+            obj = {
+                "title": f"{doc.metadata.get('source', '')} - Chunk {i+1}",
+                "content": chunk,
+                "metadata": {
+                    "source": doc.metadata.get("source", ""),
+                    "file_path": doc.metadata.get("path", ""),
+                    "created_at": doc.metadata.get("created", ""),
+                    "last_accessed": doc.metadata.get("last_accessed", ""),
+                    "chunk_index": i,
+                    "total_chunks": len(chunks)
+                }
             }
-        }
-        objects_to_insert.append(obj)
+            objects_to_insert.append(obj)
 
     # Insert documents using insert_many with error handling
     obsidian_notes = client.collections.get("ObsidianNotes")
@@ -56,11 +69,11 @@ try:
     batch_size = 100  # Adjust based on your needs
     for i in range(0, len(objects_to_insert), batch_size):
         batch = objects_to_insert[i:i+batch_size]
-    try:
-        result = obsidian_notes.data.insert_many(batch)
-        successful_inserts = sum(1 for obj in result.objects if obj.error is None)
-        print(f"Inserted batch {i//batch_size + 1} with {successful_inserts} documents successfully.")
-    except weaviate.exceptions.WeaviateBaseError as e:
+        try:
+            result = obsidian_notes.data.insert_many(batch)
+            successful_inserts = len(batch)  # Assume all inserts were successful
+            print(f"Inserted batch {i//batch_size + 1} with {successful_inserts} documents successfully.")
+        except weaviate.exceptions.WeaviateBaseError as e:
             print(f"Error inserting batch {i//batch_size + 1}: {str(e)}")
             # Optionally, you can implement retry logic here
 

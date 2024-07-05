@@ -37,7 +37,7 @@ class LangChainProgram:
                 "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
             }
         )
-        vectorstore = Weaviate(client, "ObsidianDocs", "content", attributes=["title"])
+        vectorstore = Weaviate(client, "ObsidianNotes", "content", attributes=["title"])
         retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
         return retriever
         

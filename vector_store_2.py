@@ -6,33 +6,39 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Connect to Weaviate cloud
-client = weaviate.connect_to_weaviate_cloud(
-    cluster_url=os.getenv("WEAVIATE_CLUSTER_URL"),  # Replace with your Weaviate cluster URL
-    auth_credentials=weaviate.auth.AuthApiKey(os.getenv("WEAVIATE_API_KEY")),  # Replace with your Weaviate API key
-    headers={
-        "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")  # Make sure to set your OpenAI API key as an environment variable
-    }
-)
+try:
+    # Connect to Weaviate cloud
+    client = weaviate.connect_to_weaviate_cloud(
+        cluster_url=os.getenv("WEAVIATE_CLUSTER_URL"),
+        auth_credentials=weaviate.auth.AuthApiKey(os.getenv("WEAVIATE_API_KEY")),
+        headers={
+            "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
+        }
+    )
 
-# Create a collection using OpenAI embedding and generative models
-client.collections.create(
-    name="ObsidianNotes",
-    description="Collection for Obsidian notes",
-    vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),  # Use OpenAI for embeddings
-    generative_config=wvc.config.Configure.Generative.openai(),  # Use OpenAI for generative tasks
-)
+    # Check if the collection already exists
+    if not client.collections.exists("ObsidianNotes"):
+        # Create a collection using OpenAI embedding and generative models
+        client.collections.create(
+            name="ObsidianNotes",
+            description="Collection for Obsidian notes",
+            vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),
+            generative_config=wvc.config.Configure.Generative.openai(),
+        )
+        print("Collection 'ObsidianNotes' created successfully.")
+    else:
+        print("Collection 'ObsidianNotes' already exists.")
 
-# Example of how to load and add a document from ObsidianLoader
-loader = ObsidianLoader(os.getenv("OBSIDIAN_PATH"))
-docs = loader.load()
-print(len(docs))
+    # Load documents from ObsidianLoader
+    loader = ObsidianLoader(os.getenv("OBSIDIAN_PATH"))
+    docs = loader.load()
+    print(f"Total documents loaded: {len(docs)}")
 
-# Prepare batch objects
-batch_size = 20  # Adjust this based on your needs and memory constraints
-with client.batch.fixed_size(batch_size=batch_size) as batch:
-    for i, doc in enumerate(docs):
-        properties = {
+    # Prepare objects for insertion
+    objects_to_insert = []
+    for doc in docs:
+        # Print the source of the document
+        obj = {
             "title": doc.metadata.get("source", ""),
             "content": doc.page_content,
             "metadata": {
@@ -42,13 +48,32 @@ with client.batch.fixed_size(batch_size=batch_size) as batch:
                 "last_accessed": doc.metadata.get("last_accessed", ""),
             }
         }
-        batch.add_object(
-            collection="ObsidianNotes",
-            properties=properties
-        )
-        
-        # print the range of docs in the entire docs list that were loaded in this batch
-        print(f"Loaded docs {i*batch_size} to {(i+1)*batch_size-1}")
+        objects_to_insert.append(obj)
 
-client.close()
-print("Collection created and documents added successfully!")
+    # Insert documents using insert_many with error handling
+    obsidian_notes = client.collections.get("ObsidianNotes")
+    
+    batch_size = 100  # Adjust based on your needs
+    for i in range(0, len(objects_to_insert), batch_size):
+        batch = objects_to_insert[i:i+batch_size]
+    try:
+        result = obsidian_notes.data.insert_many(batch)
+        successful_inserts = sum(1 for obj in result.objects if obj.error is None)
+        print(f"Inserted batch {i//batch_size + 1} with {successful_inserts} documents successfully.")
+    except weaviate.exceptions.WeaviateBaseError as e:
+            print(f"Error inserting batch {i//batch_size + 1}: {str(e)}")
+            # Optionally, you can implement retry logic here
+
+    # Verify the total number of objects inserted
+    total_count = obsidian_notes.aggregate.over_all(total_count=True).total_count
+    print(f"Total documents in collection: {total_count}")
+
+except weaviate.exceptions.WeaviateBaseError as e:
+    print(f"An error occurred: {str(e)}")
+
+finally:
+    if 'client' in locals():
+        client.close()
+        print("Weaviate client connection closed.")
+
+print("Script execution completed.")

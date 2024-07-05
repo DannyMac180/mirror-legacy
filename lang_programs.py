@@ -46,7 +46,7 @@ class LangChainProgram:
             embedding=OpenAIEmbeddings()
         )
 
-        return vectorstore.as_retriever(search_kwargs={"k": 4})
+        return vectorstore.as_retriever(search_kwargs={"k": 5})
         
     def create_llm(self):
         if self.llm_provider == "lm-studio":

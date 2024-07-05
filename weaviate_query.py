@@ -26,37 +26,54 @@ def get_cluster_metadata():
 
     print(f"Vector dimensions for ObsidianNotes: {vector_dimensions}")
 
-
 def query_weaviate(query, k=5):
-    # Initialize Weaviate client
-    client = weaviate.Client(
-        url=os.getenv("WEAVIATE_CLUSTER_URL"),
-        auth_client_secret=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
-        additional_headers={
-            "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
-        }
-    )
+    try:
+        # Initialize Weaviate client
+        client = weaviate.Client(
+            url=os.getenv("WEAVIATE_CLUSTER_URL"),
+            auth_client_secret=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
+            additional_headers={
+                "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
+            }
+        )
 
-    # Perform semantic search
-    result = (
-        client.query
-        .get("ObsidianNotes", ["content", "title", "path"])
-        .with_near_text({"concepts": [query]})
-        .with_limit(k)
-        .do()
-    )
+        # Print the query for debugging
+        print(f"Executing query: {query}")
 
-    # Extract and print results
-    if "data" in result and "Get" in result["data"] and "ObsidianNotes" in result["data"]["Get"]:
-        documents = result["data"]["Get"]["ObsidianNotes"]
-        for i, doc in enumerate(documents, 1):
-            print(f"\nDocument {i}:")
-            print(f"Title: {doc.get('title', 'N/A')}")
-            print(f"Path: {doc.get('path', 'N/A')}")
-            print(f"Content: {doc.get('content', 'N/A')[:1000]}...")  # Print first 200 characters of content
-            print("-" * 50)
-    else:
-        print("No results found or there was an error in the query.")
+        # Perform semantic search
+        result = (
+            client.query
+            .get("ObsidianNotes", ["content", "title"])
+            .with_near_text({"concepts": [query]})
+            .with_limit(k)
+            .do()
+        )
+
+        # Print the raw result for debugging
+        print(f"Raw result: {result}")
+
+        # Extract and print results
+        if "data" in result and "Get" in result["data"] and "ObsidianNotes" in result["data"]["Get"]:
+            documents = result["data"]["Get"]["ObsidianNotes"]
+            for i, doc in enumerate(documents, 1):
+                print(f"\nDocument {i}:")
+                print(f"Title: {doc.get('title', 'N/A')}")
+                print(f"Path: {doc.get('path', 'N/A')}")
+                print(f"Content: {doc.get('content', 'N/A')[:200]}...")  # Print first 200 characters of content
+                print("-" * 50)
+        else:
+            print("No results found or there was an error in the query structure.")
+            print("Result structure:", result)
+
+    except weaviate.exceptions.AuthenticationFailedError:
+        print("Authentication failed. Please check your Weaviate API key.")
+    except weaviate.exceptions.WeaviateQueryError as e:
+        print(f"Error in Weaviate query: {str(e)}")
+    except weaviate.exceptions.WeaviateConnectionError:
+        print("Failed to connect to Weaviate. Please check your Weaviate URL and network connection.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
 
 # Example usage
 if __name__ == "__main__":

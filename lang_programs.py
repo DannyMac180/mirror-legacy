@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain import hub
-import json
+import weave
 
 load_dotenv()
 
@@ -65,7 +65,8 @@ class LangChainProgram:
                               streaming=True)
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
-
+    
+    @weave.op()
     def invoke_chat(self, message):
         self.memory.add_user_message(message)
         response = ""
@@ -76,15 +77,4 @@ class LangChainProgram:
                 response += answer
                 yield answer
         self.memory.add_ai_message(response)
-
-    def inspect_documents(self):
-        results = self.retriever.get_relevant_documents("sample query")
-        for i, doc in enumerate(results):
-            print(f"Document {i+1}:")
-            print(f"Content: {doc.page_content[:500]}...")
-            print(f"Metadata: {doc.metadata}")
-            print("---")
-
-    def print_schema(self):
-        schema = self.retriever.client.schema.get("ObsidianNotes")
-        print(json.dumps(schema, indent=2))
+    weave.init('mirror')

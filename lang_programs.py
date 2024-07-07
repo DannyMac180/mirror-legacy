@@ -4,21 +4,14 @@ from langchain.memory import ChatMessageHistory
 from langchain.vectorstores import Weaviate
 from langchain.embeddings import OpenAIEmbeddings
 import weaviate
-import phoenix as px
-from phoenix.trace.langchain import LangChainInstrumentor
 import os
 from dotenv import load_dotenv
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain import hub
-import weave
+from langsmith import traceable
 
 load_dotenv()
-
-session = px.launch_app()
-print(session.url)
-
-LangChainInstrumentor().instrument()
 
 class LangChainProgram:
     def __init__(self, llm_provider):
@@ -66,15 +59,14 @@ class LangChainProgram:
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
     
-    @weave.op()
+    @traceable(run_type="chain")
     def invoke_chat(self, message):
         self.memory.add_user_message(message)
         response = ""
-        
+
         for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}):
             if 'answer' in chunk:
                 answer = chunk['answer']
                 response += answer
                 yield answer
         self.memory.add_ai_message(response)
-    weave.init('mirror')

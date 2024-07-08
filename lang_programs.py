@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
+from langchain_anthropic import ChatAnthropic
 from langchain.memory import ChatMessageHistory
 from langchain.vectorstores import Weaviate
 from langchain.embeddings import OpenAIEmbeddings
@@ -56,6 +57,10 @@ class LangChainProgram:
             return ChatOpenAI(model="gpt-4o",
                               api_key=os.getenv("OPENAI_API_KEY"),
                               streaming=True)
+        elif self.llm_provider == "claude-3.5-sonnet":
+            return ChatAnthropic(model="claude-3-5-sonnet-20240620",
+                                 api_key=os.getenv("ANTHROPIC_API_KEY"),
+                                 streaming=True)
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
     

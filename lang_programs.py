@@ -11,6 +11,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain import hub
 from langsmith import traceable
+from langchain.callbacks.tracers.langchain import wait_for_all_tracers
 
 load_dotenv()
 
@@ -75,3 +76,5 @@ class LangChainProgram:
                 response += answer
                 yield answer
         self.memory.add_ai_message(response)
+        
+    wait_for_all_tracers()

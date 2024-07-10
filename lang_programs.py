@@ -10,8 +10,11 @@ from dotenv import load_dotenv
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain import hub
-from langsmith import traceable
+from langchain.callbacks import LangChainTracer
+from langsmith import Client
 from langchain.callbacks.tracers.langchain import wait_for_all_tracers
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+
 
 load_dotenv()
 
@@ -65,12 +68,20 @@ class LangChainProgram:
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
     
-    @traceable(run_type="chain")
     def invoke_chat(self, message):
         self.memory.add_user_message(message)
         response = ""
+        
+        tracer = LangChainTracer(
+            project_name=os.getenv("LANGCHAIN_PROJECT"),
+            client=Client(
+                api_url="https://api.smith.langchain.com",
+                api_key=os.getenv("LANGCHAIN_API_KEY")
+            )
+        )
 
-        for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}):
+        callbacks = [StreamingStdOutCallbackHandler(), tracer]
+        for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}, config={'callbacks': callbacks}):
             if 'answer' in chunk:
                 answer = chunk['answer']
                 response += answer

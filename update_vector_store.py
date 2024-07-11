@@ -90,15 +90,15 @@ def main():
         return
 
     client = weaviate.connect_to_wcs(
-        cluster_url=os.getenv("WEAVIATE_URL"),  # Replace with your actual WCS cluster URL
-        auth_credentials=weaviate.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),  # Replace with your Weaviate API key
+        cluster_url=os.getenv("WEAVIATE_CLUSTER_URL"),  # Replace with your actual WCS cluster URL
+        auth_credentials=weaviate.auth.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),  # Replace with your Weaviate API key
         headers={
             "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")  # Replace with your OpenAI API key
         }
     )
     
     # Check if the collection already exists, if not, create it
-    if "ObsidianDocs" not in client.collections:
+    if not client.collections.exists("ObsidianDocs"):
         obsidian_docs = client.collections.create(
             name="ObsidianDocs",
             vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(),

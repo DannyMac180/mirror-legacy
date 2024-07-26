@@ -7,6 +7,7 @@ from langchain_community.document_loaders import ObsidianLoader
 import weaviate
 import weaviate.classes as wvc
 from dotenv import load_dotenv
+from elasticsearch import Elasticsearch
 
 load_dotenv()
 
@@ -24,6 +25,23 @@ log_file = f"{log_dir}/update_vector_store_{datetime.now().strftime('%Y%m%d_%H%M
 logging.basicConfig(filename=log_file, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Configure Elasticsearch client
+es = Elasticsearch(['http://localhost:9200'])
+
+# Add a custom Elasticsearch handler
+class ElasticsearchHandler(logging.Handler):
+    def emit(self, record):
+        doc = {
+            'timestamp': datetime.utcnow(),
+            'level': record.levelname,
+            'message': self.format(record)
+        }
+        es.index(index="vector-store-logs", document=doc)
+
+# Add the Elasticsearch handler to the logger
+es_handler = ElasticsearchHandler()
+logger.addHandler(es_handler)
 
 def load_index():
     if os.path.exists(INDEX_FILE_PATH):

@@ -1,13 +1,13 @@
 import os
 import json
 import hashlib
-import logging
 from datetime import datetime
 from langchain_community.document_loaders import ObsidianLoader
 import weaviate
 import weaviate.classes as wvc
 from dotenv import load_dotenv
-from elasticsearch import Elasticsearch
+from google.cloud import logging as cloud_logging
+from google.oauth2 import service_account
 
 load_dotenv()
 
@@ -18,30 +18,17 @@ INDEX_FILE_PATH = 'docs_inserted_index.json'
 # Weaviate client configuration
 WEAVIATE_URL = 'https://mirror-cluster-t3a5zsyf.weaviate.network'
 
-# Set up logging
-log_dir = 'logs'
-os.makedirs(log_dir, exist_ok=True)
-log_file = f"{log_dir}/update_vector_store_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(filename=log_file, level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Path to your service account key file
+SERVICE_ACCOUNT_FILE = '/Users/danielmcateer/Documents/mirror-430619-a754336cc49c.json'
 
-# Configure Elasticsearch client
-es = Elasticsearch(['http://localhost:9200'])
+# Your Google Cloud project ID
+PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 
-# Add a custom Elasticsearch handler
-class ElasticsearchHandler(logging.Handler):
-    def emit(self, record):
-        doc = {
-            'timestamp': datetime.utcnow(),
-            'level': record.levelname,
-            'message': self.format(record)
-        }
-        es.index(index="vector-store-logs", document=doc)
-
-# Add the Elasticsearch handler to the logger
-es_handler = ElasticsearchHandler()
-logger.addHandler(es_handler)
+# Set up GCP Cloud Logging
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE)
+client = cloud_logging.Client(credentials=credentials, project=PROJECT_ID)
+logger = client.logger('vector-store-update-logs')
 
 def load_index():
     if os.path.exists(INDEX_FILE_PATH):
@@ -51,11 +38,11 @@ def load_index():
                 if content.strip():  # Check if file is not empty
                     return json.loads(content)
                 else:
-                    logger.warning(f"Warning: {INDEX_FILE_PATH} is empty. Returning empty dict.")
+                    logger.log_text("Warning: {} is empty. Returning empty dict.".format(INDEX_FILE_PATH), severity="WARNING")
         except json.JSONDecodeError:
-            logger.error(f"Error: {INDEX_FILE_PATH} contains invalid JSON. Returning empty dict.")
+            logger.log_text("Error: {} contains invalid JSON. Returning empty dict.".format(INDEX_FILE_PATH), severity="ERROR")
     else:
-        logger.info(f"Info: {INDEX_FILE_PATH} does not exist. Returning empty dict.")
+        logger.log_text("Info: {} does not exist. Returning empty dict.".format(INDEX_FILE_PATH), severity="INFO")
     return {}
 
 def save_index(index):
@@ -70,7 +57,7 @@ def get_file_hash(file_path):
             hasher.update(buf)
         return hasher.hexdigest()
     except FileNotFoundError:
-        logger.warning(f"Warning: File not found: {file_path}")
+        logger.log_text("Warning: File not found: {}".format(file_path), severity="WARNING")
         return None
 
 def get_new_documents(obsidian_loader, index):
@@ -78,7 +65,7 @@ def get_new_documents(obsidian_loader, index):
     for doc in obsidian_loader.load():
         file_path = doc.metadata.get('path')
         if file_path is None:
-            logger.warning(f"Document has no source path. Skipping. Content preview: {doc.page_content[:100]}...")
+            logger.log_text("Document has no source path. Skipping. Content preview: {}...".format(doc.page_content[:100]), severity="WARNING")
             continue
         
         try:
@@ -86,9 +73,9 @@ def get_new_documents(obsidian_loader, index):
             if file_hash not in index:
                 index[file_hash] = datetime.now().isoformat()
                 new_docs.append(doc)
-                logger.info(f"New document found: {file_path}")
+                logger.log_text("New document found: {}".format(file_path), severity="INFO")
         except Exception as e:
-            logger.error(f"Error processing file {file_path}: {str(e)}")
+            logger.log_text("Error processing file {}: {}".format(file_path, str(e)), severity="ERROR")
     
     return new_docs
 
@@ -111,28 +98,28 @@ def insert_documents_to_weaviate(client, documents):
                     }
                 )
                 successful_inserts += 1
-                logger.info(f"Successfully inserted document: {doc.metadata['path']}")
+                logger.log_text("Successfully inserted document: {}".format(doc.metadata['path']), severity="INFO")
             except Exception as e:
                 failed_inserts += 1
-                logger.error(f"Failed to insert document {doc.metadata['path']}: {str(e)}")
+                logger.log_text("Failed to insert document {}: {}".format(doc.metadata['path'], str(e)), severity="ERROR")
     
     return successful_inserts, failed_inserts
 
 def main():
-    logger.info("Starting vector store update process")
+    logger.log_text("Starting vector store update process", severity="INFO")
     start_time = datetime.now()
 
     index = load_index()
-    logger.info(f"Loaded index with {len(index)} entries")
+    logger.log_text("Loaded index with {} entries".format(len(index)), severity="INFO")
 
     obsidian_loader = ObsidianLoader(OBS_VAULT_PATH)
     new_documents = get_new_documents(obsidian_loader, index)
 
     if not new_documents:
-        logger.info("No new documents found.")
+        logger.log_text("No new documents found.", severity="INFO")
         return
 
-    logger.info(f"Found {len(new_documents)} new documents")
+    logger.log_text("Found {} new documents".format(len(new_documents)), severity="INFO")
 
     try:
         client = weaviate.connect_to_wcs(
@@ -142,21 +129,21 @@ def main():
                 "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
             }
         )
-        logger.info("Successfully connected to Weaviate")
+        logger.log_text("Successfully connected to Weaviate", severity="INFO")
     except Exception as e:
-        logger.error(f"Failed to connect to Weaviate: {str(e)}")
+        logger.log_text("Failed to connect to Weaviate: {}".format(str(e)), severity="ERROR")
         return
 
     # Check if the collection already exists, if not, create it
     if not client.collections.exists("ObsidianDocs"):
         try:
             create_obsidian_docs_collection(client)
-            logger.info("Created ObsidianDocs collection in Weaviate")
+            logger.log_text("Created ObsidianDocs collection in Weaviate", severity="INFO")
         except Exception as e:
-            logger.error(f"Failed to create ObsidianDocs collection: {str(e)}")
+            logger.log_text("Failed to create ObsidianDocs collection: {}".format(str(e)), severity="ERROR")
             return
     else:
-        logger.info("ObsidianDocs collection already exists in Weaviate")
+        logger.log_text("ObsidianDocs collection already exists in Weaviate", severity="INFO")
 
     successful_inserts, failed_inserts = insert_documents_to_weaviate(client, new_documents)
 
@@ -165,10 +152,10 @@ def main():
     end_time = datetime.now()
     duration = end_time - start_time
     
-    logger.info(f"Vector store update process completed in {duration}")
-    logger.info(f"Total documents processed: {len(new_documents)}")
-    logger.info(f"Successful insertions: {successful_inserts}")
-    logger.info(f"Failed insertions: {failed_inserts}")
+    logger.log_text("Vector store update process completed in {}".format(duration), severity="INFO")
+    logger.log_text("Total documents processed: {}".format(len(new_documents)), severity="INFO")
+    logger.log_text("Successful insertions: {}".format(successful_inserts), severity="INFO")
+    logger.log_text("Failed insertions: {}".format(failed_inserts), severity="INFO")
 
     print_summary(len(new_documents), successful_inserts, failed_inserts, duration)
 
@@ -193,11 +180,11 @@ def create_obsidian_docs_collection(client):
 
 def print_summary(total_docs, successful_inserts, failed_inserts, duration):
     print("\n--- Vector Store Update Summary ---")
-    print(f"Total documents processed: {total_docs}")
-    print(f"Successful insertions: {successful_inserts}")
-    print(f"Failed insertions: {failed_inserts}")
-    print(f"Duration: {duration}")
-    print(f"Log file: {log_file}")
+    print("Total documents processed: {}".format(total_docs))
+    print("Successful insertions: {}".format(successful_inserts))
+    print("Failed insertions: {}".format(failed_inserts))
+    print("Duration: {}".format(duration))
+    print("Logs available in GCP Cloud Logging")
     print("----------------------------------")
 
 if __name__ == "__main__":

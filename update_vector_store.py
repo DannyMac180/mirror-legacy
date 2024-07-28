@@ -6,8 +6,8 @@ from langchain_community.document_loaders import ObsidianLoader
 import weaviate
 import weaviate.classes as wvc
 from dotenv import load_dotenv
-from google.cloud import logging as cloud_logging
-from google.oauth2 import service_account
+from google.cloud import logging_v2
+from google.auth import default
 
 load_dotenv()
 
@@ -18,16 +18,12 @@ INDEX_FILE_PATH = 'docs_inserted_index.json'
 # Weaviate client configuration
 WEAVIATE_URL = 'https://mirror-cluster-t3a5zsyf.weaviate.network'
 
-# Path to your service account key file
-SERVICE_ACCOUNT_FILE = '/Users/danielmcateer/Documents/mirror-430619-a754336cc49c.json'
-
 # Your Google Cloud project ID
 PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 
 # Set up GCP Cloud Logging
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE)
-client = cloud_logging.Client(credentials=credentials, project=PROJECT_ID)
+credentials, project = default()
+client = logging_v2.Client(project=PROJECT_ID, credentials=credentials)
 logger = client.logger('vector-store-update-logs')
 
 def load_index():
@@ -106,58 +102,67 @@ def insert_documents_to_weaviate(client, documents):
     return successful_inserts, failed_inserts
 
 def main():
-    logger.log_text("Starting vector store update process", severity="INFO")
-    start_time = datetime.now()
-
-    index = load_index()
-    logger.log_text("Loaded index with {} entries".format(len(index)), severity="INFO")
-
-    obsidian_loader = ObsidianLoader(OBS_VAULT_PATH)
-    new_documents = get_new_documents(obsidian_loader, index)
-
-    if not new_documents:
-        logger.log_text("No new documents found.", severity="INFO")
-        return
-
-    logger.log_text("Found {} new documents".format(len(new_documents)), severity="INFO")
-
+    print(f"Using project: {PROJECT_ID}")
+    
     try:
-        client = weaviate.connect_to_wcs(
-            cluster_url=os.getenv("WEAVIATE_CLUSTER_URL"),
-            auth_credentials=weaviate.auth.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
-            headers={
-                "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
-            }
-        )
-        logger.log_text("Successfully connected to Weaviate", severity="INFO")
-    except Exception as e:
-        logger.log_text("Failed to connect to Weaviate: {}".format(str(e)), severity="ERROR")
-        return
+        logger.log_text("Starting vector store update process", severity="INFO")
+        start_time = datetime.now()
 
-    # Check if the collection already exists, if not, create it
-    if not client.collections.exists("ObsidianDocs"):
-        try:
-            create_obsidian_docs_collection(client)
-            logger.log_text("Created ObsidianDocs collection in Weaviate", severity="INFO")
-        except Exception as e:
-            logger.log_text("Failed to create ObsidianDocs collection: {}".format(str(e)), severity="ERROR")
+        index = load_index()
+        logger.log_text("Loaded index with {} entries".format(len(index)), severity="INFO")
+
+        obsidian_loader = ObsidianLoader(OBS_VAULT_PATH)
+        new_documents = get_new_documents(obsidian_loader, index)
+
+        if not new_documents:
+            logger.log_text("No new documents found.", severity="INFO")
             return
-    else:
-        logger.log_text("ObsidianDocs collection already exists in Weaviate", severity="INFO")
 
-    successful_inserts, failed_inserts = insert_documents_to_weaviate(client, new_documents)
+        logger.log_text("Found {} new documents".format(len(new_documents)), severity="INFO")
 
-    save_index(index)
-    
-    end_time = datetime.now()
-    duration = end_time - start_time
-    
-    logger.log_text("Vector store update process completed in {}".format(duration), severity="INFO")
-    logger.log_text("Total documents processed: {}".format(len(new_documents)), severity="INFO")
-    logger.log_text("Successful insertions: {}".format(successful_inserts), severity="INFO")
-    logger.log_text("Failed insertions: {}".format(failed_inserts), severity="INFO")
+        try:
+            client = weaviate.connect_to_wcs(
+                cluster_url=os.getenv("WEAVIATE_CLUSTER_URL"),
+                auth_credentials=weaviate.auth.AuthApiKey(api_key=os.getenv("WEAVIATE_API_KEY")),
+                headers={
+                    "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
+                }
+            )
+            logger.log_text("Successfully connected to Weaviate", severity="INFO")
+        except Exception as e:
+            logger.log_text("Failed to connect to Weaviate: {}".format(str(e)), severity="ERROR")
+            return
 
-    print_summary(len(new_documents), successful_inserts, failed_inserts, duration)
+        # Check if the collection already exists, if not, create it
+        if not client.collections.exists("ObsidianDocs"):
+            try:
+                create_obsidian_docs_collection(client)
+                logger.log_text("Created ObsidianDocs collection in Weaviate", severity="INFO")
+            except Exception as e:
+                logger.log_text("Failed to create ObsidianDocs collection: {}".format(str(e)), severity="ERROR")
+                return
+        else:
+            logger.log_text("ObsidianDocs collection already exists in Weaviate", severity="INFO")
+
+        successful_inserts, failed_inserts = insert_documents_to_weaviate(client, new_documents)
+
+        save_index(index)
+        
+        end_time = datetime.now()
+        duration = end_time - start_time
+        
+        logger.log_text("Vector store update process completed in {}".format(duration), severity="INFO")
+        logger.log_text("Total documents processed: {}".format(len(new_documents)), severity="INFO")
+        logger.log_text("Successful insertions: {}".format(successful_inserts), severity="INFO")
+        logger.log_text("Failed insertions: {}".format(failed_inserts), severity="INFO")
+
+        print_summary(len(new_documents), successful_inserts, failed_inserts, duration)
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        # You might want to log this error to a local file since cloud logging is failing
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: {str(e)}\n")
 
 def create_obsidian_docs_collection(client):
     obsidian_docs = client.collections.create(

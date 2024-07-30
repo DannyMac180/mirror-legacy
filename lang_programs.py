@@ -53,7 +53,7 @@ class LangChainProgram:
                               model="bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp16.gguf",
                               streaming=True)
         elif self.llm_provider == "groq":
-            return ChatGroq(model_name="llama3-70b-8192",
+            return ChatGroq(model_name="llama-3.1-70b-versatile",
                             groq_api_key=os.getenv("GROQ_API_KEY"),
                             streaming=True,
                             temperature=0.7)

@@ -14,7 +14,8 @@ from langchain.callbacks import LangChainTracer
 from langsmith import Client
 from langchain.callbacks.tracers.langchain import wait_for_all_tracers
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import CohereRerank
 
 load_dotenv()
 
@@ -44,7 +45,26 @@ class LangChainProgram:
             embedding=OpenAIEmbeddings()
         )
 
-        return vectorstore.as_retriever(search_kwargs={"k": 5})
+        base_retriever = vectorstore.as_retriever(
+            search_kwargs={
+                "k": 20,  # Increase k to retrieve more initial results
+                "alpha": 0.5
+            }
+        )
+
+        # Initialize the Cohere reranker
+        compressor = CohereRerank(
+            cohere_api_key=os.getenv("COHERE_API_KEY"),
+            top_n=5  # Number of documents to return after reranking
+        )
+
+        # Create a ContextualCompressionRetriever with the base retriever and reranker
+        reranking_retriever = ContextualCompressionRetriever(
+            base_compressor=compressor,
+            base_retriever=base_retriever
+        )
+
+        return reranking_retriever
         
     def create_llm(self):
         if self.llm_provider == "lm-studio":

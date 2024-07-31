@@ -101,6 +101,31 @@ def insert_documents_to_weaviate(client, documents):
     
     return successful_inserts, failed_inserts
 
+def get_all_obsidian_documents(obsidian_loader):
+    return set(doc.metadata['path'] for doc in obsidian_loader.load())
+
+def get_all_weaviate_documents(client):
+    obsidian_docs = client.collections.get("ObsidianDocs")
+    return set(obj['properties']['path'] for obj in obsidian_docs.query.fetch_objects())
+
+def remove_deleted_documents(client, to_remove):
+    obsidian_docs = client.collections.get("ObsidianDocs")
+    successful_deletions = 0
+    failed_deletions = 0
+    
+    for path in to_remove:
+        try:
+            obsidian_docs.data.delete(
+                where={"path": ["$eq", path]}
+            )
+            logger.log_text(f"Removed document from Weaviate: {path}", severity="INFO")
+            successful_deletions += 1
+        except Exception as e:
+            logger.log_text(f"Failed to remove document from Weaviate: {path}. Error: {str(e)}", severity="ERROR")
+            failed_deletions += 1
+    
+    return successful_deletions, failed_deletions
+
 def main():
     print(f"Using project: {PROJECT_ID}")
     
@@ -146,6 +171,12 @@ def main():
 
         successful_inserts, failed_inserts = insert_documents_to_weaviate(client, new_documents)
 
+        obsidian_docs = get_all_obsidian_documents(obsidian_loader)
+        weaviate_docs = get_all_weaviate_documents(client)
+
+        to_remove = weaviate_docs - obsidian_docs
+        successful_deletions, failed_deletions = remove_deleted_documents(client, to_remove)
+
         save_index(index)
         
         end_time = datetime.now()
@@ -155,8 +186,11 @@ def main():
         logger.log_text("Total documents processed: {}".format(len(new_documents)), severity="INFO")
         logger.log_text("Successful insertions: {}".format(successful_inserts), severity="INFO")
         logger.log_text("Failed insertions: {}".format(failed_inserts), severity="INFO")
+        logger.log_text(f"Documents removed from Weaviate: {len(to_remove)}", severity="INFO")
+        logger.log_text(f"Successful deletions: {successful_deletions}", severity="INFO")
+        logger.log_text(f"Failed deletions: {failed_deletions}", severity="INFO")
 
-        print_summary(len(new_documents), successful_inserts, failed_inserts, duration)
+        print_summary(len(new_documents), successful_inserts, failed_inserts, len(to_remove), successful_deletions, failed_deletions, duration)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
@@ -183,12 +217,15 @@ def create_obsidian_docs_collection(client):
     for name, data_type in properties:
         obsidian_docs.properties.create(name=name, data_type=data_type)
 
-def print_summary(total_docs, successful_inserts, failed_inserts, duration):
+def print_summary(total_docs, successful_inserts, failed_inserts, total_deletions, successful_deletions, failed_deletions, duration):
     print("\n--- Vector Store Update Summary ---")
-    print("Total documents processed: {}".format(total_docs))
-    print("Successful insertions: {}".format(successful_inserts))
-    print("Failed insertions: {}".format(failed_inserts))
-    print("Duration: {}".format(duration))
+    print(f"Total documents processed: {total_docs}")
+    print(f"Successful insertions: {successful_inserts}")
+    print(f"Failed insertions: {failed_inserts}")
+    print(f"Total deletions: {total_deletions}")
+    print(f"Successful deletions: {successful_deletions}")
+    print(f"Failed deletions: {failed_deletions}")
+    print(f"Duration: {duration}")
     print("Logs available in GCP Cloud Logging")
     print("----------------------------------")
 

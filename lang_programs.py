@@ -42,13 +42,16 @@ class LangChainProgram:
             client=client,
             index_name="ObsidianNotes",
             text_key="content",
-            embedding=OpenAIEmbeddings()
+            embedding=OpenAIEmbeddings(),
+            attributes=["title", "content"]
         )
 
         base_retriever = vectorstore.as_retriever(
+            search_type="similarity",
             search_kwargs={
-                "k": 20,  # Increase k to retrieve more initial results
-                "alpha": 0.5
+                "k": 20,
+                "alpha": 0.5,
+                "fields": ["title^2", "content"]
             }
         )
 

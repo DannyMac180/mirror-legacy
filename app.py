@@ -4,7 +4,7 @@ from lang_programs import LangChainProgram
 st.title('Mirror')
 
 # Display a sidebar to select the LLM provider
-llm_provider = st.sidebar.selectbox("Select LLM Provider", ["claude-3.5-sonnet","gpt-4o", "lm-studio", "groq"])
+llm_provider = st.sidebar.selectbox("Select LLM Provider", ["claude-3.5-sonnet","gpt-4o", "lm-studio", "groq", "gemini-pro-1.5-exp"])
 
 # Initialize LangChainProgram instance and store it in the session state
 if "lang_chain_program" not in st.session_state:

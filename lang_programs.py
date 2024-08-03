@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.memory import ChatMessageHistory
 from langchain.vectorstores import Weaviate
 from langchain.embeddings import OpenAIEmbeddings
@@ -88,6 +89,13 @@ class LangChainProgram:
             return ChatAnthropic(model="claude-3-5-sonnet-20240620",
                                  api_key=os.getenv("ANTHROPIC_API_KEY"),
                                  streaming=True)
+        elif self.llm_provider == "gemini-pro-1.5-exp":
+            return ChatGoogleGenerativeAI(
+                model="gemini-1.5-pro-exp-0801",
+                google_api_key=os.getenv("GEMINI_API_KEY"),
+                streaming=True,
+                temperature=0.7
+            )
         else:
             raise ValueError(f"Invalid LLM provider: {self.llm_provider}")
     

@@ -1,0 +1,73 @@
+from langchain.document_loaders import ObsidianLoader
+from langchain.text_splitter import CharacterTextSplitter
+from sid import SidClient
+import hashlib
+import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Initialize SID client
+sid_client = SidClient(api_key="your_sid_api_key")
+
+# Initialize Obsidian loader
+obsidian_vault_path = "/path/to/your/obsidian/vault"
+obsidian_loader = ObsidianLoader(obsidian_vault_path)
+
+# Function to calculate file hash
+def calculate_file_hash(file_path):
+    with open(file_path, "rb") as f:
+        file_hash = hashlib.md5()
+        chunk = f.read(8192)
+        while chunk:
+            file_hash.update(chunk)
+            chunk = f.read(8192)
+    return file_hash.hexdigest()
+
+# Load or create the file hash database
+hash_db_path = os.path.join(obsidian_vault_path, ".sid_hash_db.json")
+if os.path.exists(hash_db_path):
+    with open(hash_db_path, "r") as f:
+        file_hash_db = json.load(f)
+else:
+    file_hash_db = {}
+
+# Load documents from Obsidian vault
+documents = []
+for root, _, files in os.walk(obsidian_vault_path):
+    for file in files:
+        if file.endswith(".md"):
+            file_path = os.path.join(root, file)
+            current_hash = calculate_file_hash(file_path)
+            
+            if file_path not in file_hash_db or file_hash_db[file_path] != current_hash:
+                # File is new or modified
+                documents.extend(obsidian_loader.load_file(file_path))
+                file_hash_db[file_path] = current_hash
+
+# Save updated file hash database
+with open(hash_db_path, "w") as f:
+    json.dump(file_hash_db, f)
+
+# Split documents into chunks
+text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+split_docs = text_splitter.split_documents(documents)
+
+# Create or update SID capsule
+capsule_name = "obsidian_vault_capsule"
+try:
+    # Try to get existing capsule
+    capsule = sid_client.get_capsule(capsule_name)
+    print(f"Updating existing capsule: {capsule_name}")
+except:
+    # If capsule doesn't exist, create a new one
+    capsule = sid_client.create_capsule(capsule_name)
+    print(f"Created new capsule: {capsule_name}")
+
+# Add documents to SID capsule
+for doc in split_docs:
+    capsule.add_text(doc.page_content, metadata=doc.metadata)
+
+print(f"Added {len(split_docs)} document chunks to SID capsule: {capsule_name}")
+

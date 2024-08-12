@@ -9,10 +9,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize SID client
-sid_client = SidClient(api_key="your_sid_api_key")
+sid_client = SidClient(api_key=os.getenv("SID_API_KEY"))
 
 # Initialize Obsidian loader
-obsidian_vault_path = "/path/to/your/obsidian/vault"
+obsidian_vault_path = os.getenv("OBSIDIAN_PATH")
 obsidian_loader = ObsidianLoader(obsidian_vault_path)
 
 # Function to calculate file hash
@@ -55,7 +55,7 @@ text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 split_docs = text_splitter.split_documents(documents)
 
 # Create or update SID capsule
-capsule_name = "obsidian_vault_capsule"
+capsule_name = "obsidian_docs"
 try:
     # Try to get existing capsule
     capsule = sid_client.get_capsule(capsule_name)

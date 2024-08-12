@@ -1,15 +1,18 @@
-from langchain.document_loaders import ObsidianLoader
+from langchain_community.document_loaders import ObsidianLoader
 from langchain.text_splitter import CharacterTextSplitter
-from sid import SidClient
 import hashlib
 import json
 import os
+import requests
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
-# Initialize SID client
-sid_client = SidClient(api_key=os.getenv("SID_API_KEY"))
+# Initialize SID API details
+SID_API_KEY = os.getenv("SID_API_KEY")
+CAPSULE_ID = os.getenv("SID_CAPSULE_ID")
+SID_BASE_URL = f"https://{CAPSULE_ID}.sid.ai/data"
 
 # Initialize Obsidian loader
 obsidian_vault_path = os.getenv("OBSIDIAN_PATH")
@@ -43,7 +46,7 @@ for root, _, files in os.walk(obsidian_vault_path):
             
             if file_path not in file_hash_db or file_hash_db[file_path] != current_hash:
                 # File is new or modified
-                documents.extend(obsidian_loader.load_file(file_path))
+                documents.extend(obsidian_loader.load())
                 file_hash_db[file_path] = current_hash
 
 # Save updated file hash database
@@ -54,20 +57,26 @@ with open(hash_db_path, "w") as f:
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 split_docs = text_splitter.split_documents(documents)
 
-# Create or update SID capsule
-capsule_name = "obsidian_docs"
-try:
-    # Try to get existing capsule
-    capsule = sid_client.get_capsule(capsule_name)
-    print(f"Updating existing capsule: {capsule_name}")
-except:
-    # If capsule doesn't exist, create a new one
-    capsule = sid_client.create_capsule(capsule_name)
-    print(f"Created new capsule: {capsule_name}")
+# Function to add document to SID capsule
+def add_to_sid(content, metadata):
+    url = f"{SID_BASE_URL}/file"
+    headers = {
+        "Authorization": f"Bearer {SID_API_KEY}",
+        "Content-Type": "multipart/form-data"
+    }
+    data = {
+        "file": content,
+        "metadata": json.dumps(metadata),
+        "time_authored": datetime.now().isoformat() + "Z",
+        "uri": metadata.get("source", "")
+    }
+    response = requests.post(url, headers=headers, files=data)
+    return response.status_code == 200
 
 # Add documents to SID capsule
+successful_uploads = 0
 for doc in split_docs:
-    capsule.add_text(doc.page_content, metadata=doc.metadata)
+    if add_to_sid(doc.page_content, doc.metadata):
+        successful_uploads += 1
 
-print(f"Added {len(split_docs)} document chunks to SID capsule: {capsule_name}")
-
+print(f"Added {successful_uploads} out of {len(split_docs)} document chunks to SID capsule")

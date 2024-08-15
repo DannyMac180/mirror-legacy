@@ -75,8 +75,11 @@ def add_to_sid(content, metadata):
 
 # Add documents to SID capsule
 successful_uploads = 0
-for doc in split_docs:
+for i, doc in enumerate(split_docs, 1):
     if add_to_sid(doc.page_content, doc.metadata):
         successful_uploads += 1
+        print(f"Uploaded document chunk {i}/{len(split_docs)} to SID capsule")
+    else:
+        print(f"Failed to upload document chunk {i}/{len(split_docs)} to SID capsule")
 
 print(f"Added {successful_uploads} out of {len(split_docs)} document chunks to SID capsule")

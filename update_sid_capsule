@@ -6,6 +6,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from datetime import datetime
+from pathlib import Path
 
 load_dotenv()
 
@@ -28,50 +29,95 @@ def calculate_file_hash(file_path):
             chunk = f.read(8192)
     return file_hash.hexdigest()
 
+# Get the directory of the current script
+script_dir = Path(__file__).parent.absolute()
+
+# Define the path for the hash database in the mirror directory
+hash_db_path = script_dir / ".sid_hash_db.json"
+
 # Load or create the file hash database
-hash_db_path = os.path.join(obsidian_vault_path, ".sid_hash_db.json")
-if os.path.exists(hash_db_path):
-    with open(hash_db_path, "r") as f:
+if hash_db_path.exists():
+    with hash_db_path.open("r") as f:
         file_hash_db = json.load(f)
+    print(f"Loaded existing hash database with {len(file_hash_db)} entries")
 else:
     file_hash_db = {}
+    print("Created new hash database")
 
 # Load documents from Obsidian vault
 documents = []
+files_processed = 0
+files_loaded = 0
+files_skipped = 0
+force_reload_count = 0  # New counter for forced reloads
+
 for root, _, files in os.walk(obsidian_vault_path):
     for file in files:
         if file.endswith(".md"):
+            files_processed += 1
             file_path = os.path.join(root, file)
             current_hash = calculate_file_hash(file_path)
             
-            if file_path not in file_hash_db or file_hash_db[file_path] != current_hash:
-                # File is new or modified
-                documents.extend(obsidian_loader.load())
-                file_hash_db[file_path] = current_hash
+            # Force reload of the first file or if the file is not in the database
+            if files_processed == 1 or file_path not in file_hash_db:
+                force_reload = True
+                force_reload_count += 1
+            else:
+                force_reload = False
 
-# Save updated file hash database
-with open(hash_db_path, "w") as f:
+            if force_reload or file_hash_db.get(file_path) != current_hash:
+                try:
+                    file_loader = ObsidianLoader(file_path)
+                    docs = file_loader.load()
+                    documents.extend(docs)
+                    file_hash_db[file_path] = current_hash
+                    files_loaded += 1
+                    print(f"Loaded file: {file_path}")
+                    if force_reload:
+                        print(f"  Forced reload of file")
+                    else:
+                        print(f"  File changed. Old hash: {file_hash_db.get(file_path)}, New hash: {current_hash}")
+                except Exception as e:
+                    print(f"Error loading file {file_path}: {str(e)}")
+            else:
+                files_skipped += 1
+                print(f"Skipped file (unchanged): {file_path}")
+                print(f"  Stored hash: {file_hash_db[file_path]}")
+                print(f"  Current hash: {current_hash}")
+
+print(f"Processed {files_processed} files, loaded {files_loaded} files (including {force_reload_count} forced reloads), skipped {files_skipped} files")
+print(f"Total documents loaded: {len(documents)}")
+
+# After processing all files, save the updated hash database
+with hash_db_path.open("w") as f:
     json.dump(file_hash_db, f)
+print(f"Saved hash database with {len(file_hash_db)} entries to {hash_db_path}")
 
 # Split documents into chunks
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 split_docs = text_splitter.split_documents(documents)
+print(f"Total document chunks after splitting: {len(split_docs)}")
 
 # Function to add document to SID capsule
 def add_to_sid(content, metadata):
     url = f"{SID_BASE_URL}/file"
     headers = {
         "Authorization": f"Bearer {SID_API_KEY}",
-        "Content-Type": "multipart/form-data"
+        "Content-Type": "application/json"
     }
     data = {
         "file": content,
-        "metadata": json.dumps(metadata),
+        "metadata": metadata,
         "time_authored": datetime.now().isoformat() + "Z",
         "uri": metadata.get("source", "")
     }
-    response = requests.post(url, headers=headers, files=data)
-    return response.status_code == 200
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error uploading to SID: {str(e)}")
+        return False
 
 # Add documents to SID capsule
 successful_uploads = 0

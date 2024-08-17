@@ -58,32 +58,22 @@ for root, _, files in os.walk(obsidian_vault_path):
             file_path = os.path.join(root, file)
             current_hash = calculate_file_hash(file_path)
             
-            # Force reload of the first file or if the file is not in the database
-            if files_processed == 1 or file_path not in file_hash_db:
-                force_reload = True
+            # Force reload of all files for now
+            try:
+                file_loader = ObsidianLoader(file_path)
+                docs = file_loader.load()
+                print(f"Loaded file: {file_path}")
+                print(f"  Number of documents: {len(docs)}")
+                if docs:
+                    print(f"  First document content (truncated): {docs[0].page_content[:100]}...")
+                else:
+                    print("  No documents loaded from this file")
+                documents.extend(docs)
+                file_hash_db[file_path] = current_hash
+                files_loaded += 1
                 force_reload_count += 1
-            else:
-                force_reload = False
-
-            if force_reload or file_hash_db.get(file_path) != current_hash:
-                try:
-                    file_loader = ObsidianLoader(file_path)
-                    docs = file_loader.load()
-                    documents.extend(docs)
-                    file_hash_db[file_path] = current_hash
-                    files_loaded += 1
-                    print(f"Loaded file: {file_path}")
-                    if force_reload:
-                        print(f"  Forced reload of file")
-                    else:
-                        print(f"  File changed. Old hash: {file_hash_db.get(file_path)}, New hash: {current_hash}")
-                except Exception as e:
-                    print(f"Error loading file {file_path}: {str(e)}")
-            else:
-                files_skipped += 1
-                print(f"Skipped file (unchanged): {file_path}")
-                print(f"  Stored hash: {file_hash_db[file_path]}")
-                print(f"  Current hash: {current_hash}")
+            except Exception as e:
+                print(f"Error loading file {file_path}: {str(e)}")
 
 print(f"Processed {files_processed} files, loaded {files_loaded} files (including {force_reload_count} forced reloads), skipped {files_skipped} files")
 print(f"Total documents loaded: {len(documents)}")
@@ -97,6 +87,10 @@ print(f"Saved hash database with {len(file_hash_db)} entries to {hash_db_path}")
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 split_docs = text_splitter.split_documents(documents)
 print(f"Total document chunks after splitting: {len(split_docs)}")
+if split_docs:
+    print(f"First chunk content (truncated): {split_docs[0].page_content[:100]}...")
+else:
+    print("No document chunks created")
 
 # Function to add document to SID capsule
 def add_to_sid(content, metadata):

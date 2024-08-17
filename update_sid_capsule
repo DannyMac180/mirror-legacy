@@ -1,25 +1,33 @@
 from langchain_community.document_loaders import ObsidianLoader
 from langchain.text_splitter import CharacterTextSplitter
-import hashlib
 import json
 import os
 import requests
+import hashlib
 from dotenv import load_dotenv
 from datetime import datetime
 from pathlib import Path
+from google.cloud import logging_v2
+from google.auth import default
 
 load_dotenv()
 
-# Initialize SID API details
+# Initialize constants
 SID_API_KEY = os.getenv("SID_API_KEY")
 CAPSULE_ID = os.getenv("SID_CAPSULE_ID")
 SID_BASE_URL = f"https://{CAPSULE_ID}.sid.ai/data"
+PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+OBSIDIAN_PATH = os.getenv("OBSIDIAN_PATH")
 
-# Initialize Obsidian loader
-obsidian_vault_path = os.getenv("OBSIDIAN_PATH")
-obsidian_loader = ObsidianLoader(obsidian_vault_path)
+# Set up GCP Cloud Logging
+credentials, project = default()
+client = logging_v2.Client(project=PROJECT_ID, credentials=credentials)
+logger = client.logger('sid-capsule-update-logs')
 
-# Function to calculate file hash
+# Get the directory of the current script
+script_dir = Path(__file__).parent.absolute()
+hash_db_path = script_dir / ".sid_hash_db.json"
+
 def calculate_file_hash(file_path):
     with open(file_path, "rb") as f:
         file_hash = hashlib.md5()
@@ -29,70 +37,46 @@ def calculate_file_hash(file_path):
             chunk = f.read(8192)
     return file_hash.hexdigest()
 
-# Get the directory of the current script
-script_dir = Path(__file__).parent.absolute()
+def load_hash_database():
+    if hash_db_path.exists():
+        with hash_db_path.open("r") as f:
+            return json.load(f)
+    return {}
 
-# Define the path for the hash database in the mirror directory
-hash_db_path = script_dir / ".sid_hash_db.json"
+def save_hash_database(file_hash_db):
+    with hash_db_path.open("w") as f:
+        json.dump(file_hash_db, f)
 
-# Load or create the file hash database
-if hash_db_path.exists():
-    with hash_db_path.open("r") as f:
-        file_hash_db = json.load(f)
-    print(f"Loaded existing hash database with {len(file_hash_db)} entries")
-else:
-    file_hash_db = {}
-    print("Created new hash database")
+def load_documents():
+    obsidian_loader = ObsidianLoader(OBSIDIAN_PATH)
+    file_hash_db = load_hash_database()
+    new_or_modified_docs = []
+    try:
+        all_docs = obsidian_loader.load()
+        for doc in all_docs:
+            file_path = doc.metadata.get('path')
+            if file_path:
+                current_hash = calculate_file_hash(file_path)
+                if file_path not in file_hash_db or file_hash_db[file_path] != current_hash:
+                    new_or_modified_docs.append(doc)
+                    file_hash_db[file_path] = current_hash
+        save_hash_database(file_hash_db)
+        logger.log_text(f"Loaded {len(new_or_modified_docs)} new or modified documents out of {len(all_docs)} total", severity="INFO")
+        return new_or_modified_docs
+    except Exception as e:
+        logger.log_text(f"Error loading documents from Obsidian vault: {str(e)}", severity="ERROR")
+        return []
 
-# Load documents from Obsidian vault
-documents = []
-files_processed = 0
-files_loaded = 0
-files_skipped = 0
-force_reload_count = 0  # New counter for forced reloads
+def split_documents(documents):
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    split_docs = text_splitter.split_documents(documents)
+    logger.log_text(f"Total document chunks after splitting: {len(split_docs)}", severity="INFO")
+    if split_docs:
+        logger.log_text(f"First chunk content (truncated): {split_docs[0].page_content[:100]}...", severity="INFO")
+    else:
+        logger.log_text("No document chunks created", severity="WARNING")
+    return split_docs
 
-for root, _, files in os.walk(obsidian_vault_path):
-    for file in files:
-        if file.endswith(".md"):
-            files_processed += 1
-            file_path = os.path.join(root, file)
-            current_hash = calculate_file_hash(file_path)
-            
-            # Force reload of all files for now
-            try:
-                file_loader = ObsidianLoader(file_path)
-                docs = file_loader.load()
-                print(f"Loaded file: {file_path}")
-                print(f"  Number of documents: {len(docs)}")
-                if docs:
-                    print(f"  First document content (truncated): {docs[0].page_content[:100]}...")
-                else:
-                    print("  No documents loaded from this file")
-                documents.extend(docs)
-                file_hash_db[file_path] = current_hash
-                files_loaded += 1
-                force_reload_count += 1
-            except Exception as e:
-                print(f"Error loading file {file_path}: {str(e)}")
-
-print(f"Processed {files_processed} files, loaded {files_loaded} files (including {force_reload_count} forced reloads), skipped {files_skipped} files")
-print(f"Total documents loaded: {len(documents)}")
-
-# After processing all files, save the updated hash database
-with hash_db_path.open("w") as f:
-    json.dump(file_hash_db, f)
-print(f"Saved hash database with {len(file_hash_db)} entries to {hash_db_path}")
-
-# Split documents into chunks
-text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-split_docs = text_splitter.split_documents(documents)
-print(f"Total document chunks after splitting: {len(split_docs)}")
-if split_docs:
-    print(f"First chunk content (truncated): {split_docs[0].page_content[:100]}...")
-else:
-    print("No document chunks created")
-
-# Function to add document to SID capsule
 def add_to_sid(content, metadata):
     url = f"{SID_BASE_URL}/file"
     headers = {
@@ -110,16 +94,53 @@ def add_to_sid(content, metadata):
         response.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
-        print(f"Error uploading to SID: {str(e)}")
+        logger.log_text(f"Error uploading to SID: {str(e)}", severity="ERROR")
         return False
 
-# Add documents to SID capsule
-successful_uploads = 0
-for i, doc in enumerate(split_docs, 1):
-    if add_to_sid(doc.page_content, doc.metadata):
-        successful_uploads += 1
-        print(f"Uploaded document chunk {i}/{len(split_docs)} to SID capsule")
-    else:
-        print(f"Failed to upload document chunk {i}/{len(split_docs)} to SID capsule")
+def upload_documents(split_docs):
+    successful_uploads = 0
+    for i, doc in enumerate(split_docs, 1):
+        if add_to_sid(doc.page_content, doc.metadata):
+            successful_uploads += 1
+            logger.log_text(f"Uploaded document chunk {i}/{len(split_docs)} to SID capsule", severity="INFO")
+        else:
+            logger.log_text(f"Failed to upload document chunk {i}/{len(split_docs)} to SID capsule", severity="ERROR")
+    return successful_uploads
 
-print(f"Added {successful_uploads} out of {len(split_docs)} document chunks to SID capsule")
+def print_summary(total_chunks, successful_uploads, failed_uploads, duration):
+    print("\n--- SID Capsule Update Summary ---")
+    print(f"Total document chunks processed: {total_chunks}")
+    print(f"Successful uploads: {successful_uploads}")
+    print(f"Failed uploads: {failed_uploads}")
+    print(f"Duration: {duration}")
+    print("Logs available in GCP Cloud Logging")
+    print("----------------------------------")
+
+def main():
+    print(f"Using project: {PROJECT_ID}")
+    
+    try:
+        logger.log_text("Starting SID capsule update process", severity="INFO")
+        start_time = datetime.now()
+
+        new_or_modified_docs = load_documents()
+        split_docs = split_documents(new_or_modified_docs)
+        successful_uploads = upload_documents(split_docs)
+
+        end_time = datetime.now()
+        duration = end_time - start_time
+        
+        logger.log_text(f"SID capsule update process completed in {duration}", severity="INFO")
+        logger.log_text(f"Total document chunks processed: {len(split_docs)}", severity="INFO")
+        logger.log_text(f"Successful uploads: {successful_uploads}", severity="INFO")
+        logger.log_text(f"Failed uploads: {len(split_docs) - successful_uploads}", severity="INFO")
+
+        print_summary(len(split_docs), successful_uploads, len(split_docs) - successful_uploads, duration)
+
+    except Exception as e:
+        logger.log_text(f"An error occurred: {str(e)}", severity="ERROR")
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: {str(e)}\n")
+
+if __name__ == "__main__":
+    main()

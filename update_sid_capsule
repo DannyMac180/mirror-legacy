@@ -10,6 +10,8 @@ from pathlib import Path
 from google.cloud import logging_v2
 from google.auth import default
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+import time
+from requests.exceptions import Timeout
 
 load_dotenv()
 
@@ -27,7 +29,7 @@ logger = client.logger('sid-capsule-update-logs')
 
 # Get the directory of the current script
 script_dir = Path(__file__).parent.absolute()
-hash_db_path = script_dir / ".sid_hash_db.json"
+hash_db_path = script_dir / "sid_hash_db.json"
 
 def calculate_file_hash(file_path):
     with open(file_path, "rb") as f:
@@ -88,25 +90,32 @@ def load_documents():
                 else:
                     print(f"Unchanged document: {file_path}")
         
-        # Check for deleted files
-        deleted_files = set(file_hash_db.keys()) - current_files
-        for deleted_file in deleted_files:
-            print(f"Deleted document: {deleted_file}")
-            if delete_from_sid(deleted_file):
-                del file_hash_db[deleted_file]
-                logger.log_text(f"Deleted document from SID capsule: {deleted_file}", severity="INFO")
-            else:
-                logger.log_text(f"Failed to delete document from SID capsule: {deleted_file}", severity="ERROR")
+        # Check for deleted files only if the hash database file exists
+        if hash_db_path.exists():
+            deleted_files = set(file_hash_db.keys()) - current_files
+            for deleted_file in deleted_files:
+                print(f"Deleted document: {deleted_file}")
+                if delete_from_sid(deleted_file):
+                    del file_hash_db[deleted_file]
+                    logger.log_text(f"Deleted document from SID capsule: {deleted_file}", severity="INFO")
+                else:
+                    logger.log_text(f"Failed to delete document from SID capsule: {deleted_file}", severity="ERROR")
+            
+            print(f"Deleted documents: {len(deleted_files)}")
+            logger.log_text(f"Deleted {len(deleted_files)} documents", severity="INFO")
+        else:
+            print("No existing hash database found. Skipping deletion step.")
+            logger.log_text("No existing hash database found. Skipping deletion step.", severity="INFO")
+            deleted_files = set()
         
         save_hash_database(file_hash_db)
         print(f"New or modified documents: {len(new_or_modified_docs)}")
-        print(f"Deleted documents: {len(deleted_files)}")
-        logger.log_text(f"Loaded {len(new_or_modified_docs)} new or modified documents, deleted {len(deleted_files)} documents, out of {len(all_docs)} total", severity="INFO")
-        return new_or_modified_docs
+        logger.log_text(f"Loaded {len(new_or_modified_docs)} new or modified documents, out of {len(all_docs)} total", severity="INFO")
+        return new_or_modified_docs, len(deleted_files)
     except Exception as e:
         print(f"Error loading documents: {str(e)}")
         logger.log_text(f"Error loading documents from Obsidian vault: {str(e)}", severity="ERROR")
-        return []
+        return [], 0
 
 def split_documents(documents):
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -118,6 +127,13 @@ def split_documents(documents):
         logger.log_text("No document chunks created", severity="WARNING")
     return split_docs
 
+# Add this function to log with timestamps
+def log_with_timestamp(message, severity="INFO"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"{timestamp} - {severity}: {message}")
+    logger.log_text(message, severity=severity)
+
+# Modify the add_to_sid function
 def add_to_sid(content, metadata):
     url = f"{SID_BASE_URL}/file"
     
@@ -137,13 +153,19 @@ def add_to_sid(content, metadata):
     }
     
     try:
-        response = requests.post(url, headers=headers, data=multipart_data)
+        log_with_timestamp(f"Uploading chunk to SID: {metadata.get('source', '')}")
+        response = requests.post(url, headers=headers, data=multipart_data, timeout=30)  # Add a 30-second timeout
         response.raise_for_status()
+        log_with_timestamp(f"Successfully uploaded chunk to SID: {metadata.get('source', '')}")
         return True
+    except Timeout:
+        log_with_timestamp(f"Timeout while uploading to SID: {metadata.get('source', '')}", severity="ERROR")
+        return False
     except requests.exceptions.RequestException as e:
-        logger.log_text(f"Error uploading to SID: {str(e)}", severity="ERROR")
+        log_with_timestamp(f"Error uploading to SID: {str(e)}", severity="ERROR")
         return False
 
+# Modify the upload_documents function
 def upload_documents(split_docs):
     successful_uploads = 0
     file_hash_db = load_hash_database()
@@ -158,27 +180,32 @@ def upload_documents(split_docs):
             docs_by_source[source].append(doc)
     
     for source, docs in docs_by_source.items():
+        log_with_timestamp(f"Processing document: {source}")
         # Delete the old version from SID
         if delete_from_sid(source):
-            logger.log_text(f"Deleted old version of document from SID: {source}", severity="INFO")
+            log_with_timestamp(f"Deleted old version of document from SID: {source}")
         else:
-            logger.log_text(f"Failed to delete old version from SID: {source}", severity="WARNING")
+            log_with_timestamp(f"Failed to delete old version from SID: {source}", severity="WARNING")
         
         # Upload all chunks of the new version
         chunks_uploaded = 0
         for i, doc in enumerate(docs, 1):
+            log_with_timestamp(f"Uploading chunk {i}/{len(docs)} for document: {source}")
             if add_to_sid(doc.page_content, doc.metadata):
                 chunks_uploaded += 1
-                logger.log_text(f"Uploaded document chunk {i}/{len(docs)} to SID capsule: {source}", severity="INFO")
+                log_with_timestamp(f"Uploaded document chunk {i}/{len(docs)} to SID capsule: {source}")
             else:
-                logger.log_text(f"Failed to upload document chunk {i}/{len(docs)} to SID capsule: {source}", severity="ERROR")
+                log_with_timestamp(f"Failed to upload document chunk {i}/{len(docs)} to SID capsule: {source}", severity="ERROR")
+            
+            # Add a small delay between uploads to avoid overwhelming the API
+            time.sleep(1)
         
         # Only update the hash if all chunks were uploaded successfully
         if chunks_uploaded == len(docs):
             file_hash_db[source] = calculate_file_hash(source)
             successful_uploads += 1
         else:
-            logger.log_text(f"Not all chunks uploaded successfully for: {source}", severity="WARNING")
+            log_with_timestamp(f"Not all chunks uploaded successfully for: {source}", severity="WARNING")
     
     # Save the updated hash database
     save_hash_database(file_hash_db)
@@ -194,32 +221,39 @@ def print_summary(total_chunks, successful_uploads, failed_uploads, deleted_file
     print("Logs available in GCP Cloud Logging")
     print("----------------------------------")
 
+# Modify the main function
 def main():
     print(f"Using project: {PROJECT_ID}")
     
     try:
-        logger.log_text("Starting SID capsule update process", severity="INFO")
+        log_with_timestamp("Starting SID capsule update process")
         start_time = datetime.now()
 
-        new_or_modified_docs = load_documents()
+        log_with_timestamp("Loading documents")
+        new_or_modified_docs, deleted_files_count = load_documents()
+        log_with_timestamp(f"Loaded {len(new_or_modified_docs)} new or modified documents")
+
+        log_with_timestamp("Splitting documents")
         split_docs = split_documents(new_or_modified_docs)
+        log_with_timestamp(f"Split into {len(split_docs)} chunks")
+
+        log_with_timestamp("Uploading documents")
         successful_uploads = upload_documents(split_docs)
+        log_with_timestamp(f"Uploaded {successful_uploads} chunks successfully")
 
         end_time = datetime.now()
         duration = end_time - start_time
         
-        deleted_files = len(set(load_hash_database().keys()) - set(doc.metadata.get('source') for doc in new_or_modified_docs))
-        
-        logger.log_text(f"SID capsule update process completed in {duration}", severity="INFO")
-        logger.log_text(f"Total document chunks processed: {len(split_docs)}", severity="INFO")
-        logger.log_text(f"Successful uploads: {successful_uploads}", severity="INFO")
-        logger.log_text(f"Failed uploads: {len(split_docs) - successful_uploads}", severity="INFO")
-        logger.log_text(f"Deleted files: {deleted_files}", severity="INFO")
+        log_with_timestamp(f"SID capsule update process completed in {duration}")
+        log_with_timestamp(f"Total document chunks processed: {len(split_docs)}")
+        log_with_timestamp(f"Successful uploads: {successful_uploads}")
+        log_with_timestamp(f"Failed uploads: {len(split_docs) - successful_uploads}")
+        log_with_timestamp(f"Deleted files: {deleted_files_count}")
 
-        print_summary(len(split_docs), successful_uploads, len(split_docs) - successful_uploads, deleted_files, duration)
+        print_summary(len(split_docs), successful_uploads, len(split_docs) - successful_uploads, deleted_files_count, duration)
 
     except Exception as e:
-        logger.log_text(f"An error occurred: {str(e)}", severity="ERROR")
+        log_with_timestamp(f"An error occurred: {str(e)}", severity="ERROR")
         with open('error_log.txt', 'a') as f:
             f.write(f"{datetime.now()}: {str(e)}\n")
 

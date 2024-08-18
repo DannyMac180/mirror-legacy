@@ -12,6 +12,7 @@ from google.auth import default
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import time
 from requests.exceptions import Timeout
+import urllib.parse
 
 load_dotenv()
 
@@ -50,7 +51,7 @@ def save_hash_database(file_hash_db):
     with hash_db_path.open("w") as f:
         json.dump(file_hash_db, f)
 
-def delete_from_sid(uri):
+def delete_from_sid(item_id):
     url = f"{SID_BASE_URL}"
     
     headers = {
@@ -58,15 +59,16 @@ def delete_from_sid(uri):
     }
     
     params = {
-        "uri": uri
+        "item_id": item_id
     }
     
     try:
         response = requests.delete(url, headers=headers, params=params)
         response.raise_for_status()
+        log_with_timestamp(f"Successfully deleted item with ID: {item_id}")
         return True
     except requests.exceptions.RequestException as e:
-        logger.log_text(f"Error deleting from SID: {str(e)}", severity="ERROR")
+        log_with_timestamp(f"Error deleting item with ID {item_id} from SID: {str(e)}", severity="ERROR")
         return False
 
 def load_documents():
@@ -181,11 +183,18 @@ def upload_documents(split_docs):
     
     for source, docs in docs_by_source.items():
         log_with_timestamp(f"Processing document: {source}")
-        # Delete the old version from SID
-        if delete_from_sid(source):
-            log_with_timestamp(f"Deleted old version of document from SID: {source}")
+        
+        # Get the item_id for this document
+        item_id = get_item_id_for_document(source)
+        
+        # Delete the old version from SID if it exists
+        if item_id:
+            if delete_from_sid(item_id):
+                log_with_timestamp(f"Deleted old version of document from SID: {source}")
+            else:
+                log_with_timestamp(f"Failed to delete old version from SID: {source}", severity="WARNING")
         else:
-            log_with_timestamp(f"Failed to delete old version from SID: {source}", severity="WARNING")
+            log_with_timestamp(f"No existing version found in SID for: {source}")
         
         # Upload all chunks of the new version
         chunks_uploaded = 0
@@ -210,6 +219,26 @@ def upload_documents(split_docs):
     # Save the updated hash database
     save_hash_database(file_hash_db)
     return successful_uploads
+
+def get_item_id_for_document(source):
+    url = f"https://{CAPSULE_ID}.sid.ai/data"
+    headers = {"Authorization": f"Bearer {SID_API_KEY}"}
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        items = response.json()
+
+        for item in items:
+            if item.get('uri') == source:
+                return item.get('item_id')
+
+        # If no matching item is found, return None
+        return None
+
+    except requests.exceptions.RequestException as e:
+        log_with_timestamp(f"Error fetching items from SID: {str(e)}", severity="ERROR")
+        return None
 
 def print_summary(total_chunks, successful_uploads, failed_uploads, deleted_files, duration):
     print("\n--- SID Capsule Update Summary ---")

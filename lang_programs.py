@@ -2,10 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.memory import ChatMessageHistory
-from langchain.vectorstores import Weaviate
-from langchain.embeddings import OpenAIEmbeddings
-import weaviate
+from langchain_community.chat_message_histories import ChatMessageHistory
 import os
 from dotenv import load_dotenv
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -15,10 +12,46 @@ from langchain.callbacks import LangChainTracer
 from langsmith import Client
 from langchain.callbacks.tracers.langchain import wait_for_all_tracers
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import CohereRerank
+from langchain.schema import Document
+from langchain_core.retrievers import BaseRetriever
+from pydantic import Field
+import requests
 
 load_dotenv()
+
+class SIDRetriever(BaseRetriever):
+    capsule_id: str = Field(...)
+    token: str = Field(...)
+    url: str = Field(...)
+
+    def __init__(self, capsule_id: str, token: str):
+        super().__init__()
+        self.capsule_id = capsule_id
+        self.token = token
+        self.url = f"https://{capsule_id}.sid.ai/query"
+
+    def get_relevant_documents(self, query: str):
+        payload = {
+            "query": query,
+            "limit": 10,  # Adjust as needed
+            "wishlist": {}
+        }
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = requests.post(self.url, json=payload, headers=headers)
+            response.raise_for_status()
+            results = response.json()
+
+            documents = [Document(page_content=doc['content'], metadata=doc.get('metadata', {})) 
+                         for doc in results.get('documents', [])]
+            return documents
+        except requests.RequestException as e:
+            print(f"Error querying SID API: {e}")
+            return []
 
 class LangChainProgram:
     def __init__(self, llm_provider):
@@ -31,44 +64,9 @@ class LangChainProgram:
         self.retrieval_chain = create_retrieval_chain(self.retriever, self.combine_docs_chain)
         
     def load_retriever(self):
-        client = weaviate.Client(
-            url=os.getenv("WEAVIATE_CLUSTER_URL"),
-            auth_client_secret=weaviate.AuthApiKey(os.getenv("WEAVIATE_API_KEY")),
-            additional_headers={
-                "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
-            }
-        )
-
-        vectorstore = Weaviate(
-            client=client,
-            index_name="ObsidianNotes",
-            text_key="content",
-            embedding=OpenAIEmbeddings(),
-            attributes=["title", "content"]
-        )
-
-        base_retriever = vectorstore.as_retriever(
-            search_type="similarity",
-            search_kwargs={
-                "k": 20,
-                "alpha": 0.5,
-                "fields": ["title^2", "content"]
-            }
-        )
-
-        # Initialize the Cohere reranker
-        compressor = CohereRerank(
-            cohere_api_key=os.getenv("COHERE_API_KEY"),
-            top_n=5  # Number of documents to return after reranking
-        )
-
-        # Create a ContextualCompressionRetriever with the base retriever and reranker
-        reranking_retriever = ContextualCompressionRetriever(
-            base_compressor=compressor,
-            base_retriever=base_retriever
-        )
-
-        return reranking_retriever
+        capsule_id = os.getenv("SID_CAPSULE_ID")
+        token = os.getenv("SID_API_KEY")
+        return SIDRetriever(capsule_id, token)
         
     def create_llm(self):
         if self.llm_provider == "lm-studio":
@@ -113,10 +111,14 @@ class LangChainProgram:
 
         callbacks = [StreamingStdOutCallbackHandler(), tracer]
         for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}, config={'callbacks': callbacks}):
-            if 'answer' in chunk:
+            if isinstance(chunk, dict) and 'answer' in chunk:
                 answer = chunk['answer']
-                response += answer
-                yield answer
+            elif isinstance(chunk, list) and len(chunk) > 0 and isinstance(chunk[0], dict) and 'answer' in chunk[0]:
+                answer = chunk[0]['answer']
+            else:
+                answer = str(chunk)  # Convert any other type to string
+            response += answer
+            yield answer
         self.memory.add_ai_message(response)
         
-    wait_for_all_tracers()
+        wait_for_all_tracers()

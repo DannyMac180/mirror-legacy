@@ -45,9 +45,17 @@ class SIDRetriever(BaseRetriever):
             response = requests.post(self.url, json=payload, headers=headers)
             response.raise_for_status()
             results = response.json()
+            print(f"Results type: {type(results)}, Content: {results}")  # For debugging
 
-            documents = [Document(page_content=doc['content'], metadata=doc.get('metadata', {})) 
-                         for doc in results.get('documents', [])]
+            if isinstance(results, list):
+                documents = [Document(page_content=doc['content'], metadata=doc.get('metadata', {})) 
+                             for doc in results]
+            elif isinstance(results, dict) and 'documents' in results:
+                documents = [Document(page_content=doc['content'], metadata=doc.get('metadata', {})) 
+                             for doc in results['documents']]
+            else:
+                print(f"Unexpected response format: {results}")
+                documents = []
             return documents
         except requests.RequestException as e:
             print(f"Error querying SID API: {e}")
@@ -113,12 +121,14 @@ class LangChainProgram:
         for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}, config={'callbacks': callbacks}):
             if isinstance(chunk, dict) and 'answer' in chunk:
                 answer = chunk['answer']
-            elif isinstance(chunk, list) and len(chunk) > 0 and isinstance(chunk[0], dict) and 'answer' in chunk[0]:
-                answer = chunk[0]['answer']
+            elif isinstance(chunk, str):
+                answer = chunk
             else:
-                answer = str(chunk)  # Convert any other type to string
+                continue  # Skip any other types of chunks
+            
             response += answer
-            yield answer
+            yield answer  # Only yield the actual answer text
+        
         self.memory.add_ai_message(response)
         
         wait_for_all_tracers()

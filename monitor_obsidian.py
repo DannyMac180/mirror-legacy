@@ -10,7 +10,7 @@ def is_obsidian_running():
     return False
 
 def run_update_script():
-    script_path = os.path.join(os.path.dirname(__file__), 'update_vector_store.py')
+    script_path = os.path.join(os.path.dirname(__file__), 'update_sid_capsule.py')
     subprocess.run(['python3', script_path])
 
 def main():
@@ -25,7 +25,7 @@ def main():
             run_update_script()
 
         obsidian_was_running = obsidian_is_running
-        time.sleep(5)  # Check every 5 seconds
+        time.sleep(1)  # Check every 5 seconds
 
 if __name__ == "__main__":
     main()

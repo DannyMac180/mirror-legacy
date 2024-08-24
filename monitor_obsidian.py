@@ -25,7 +25,7 @@ def main():
             run_update_script()
 
         obsidian_was_running = obsidian_is_running
-        time.sleep(1)  # Check every 5 seconds
+        time.sleep(1)  # Check every second
 
 if __name__ == "__main__":
     main()

@@ -67,7 +67,7 @@ class LangChainProgram:
         self.llm = self.create_llm()
         self.memory = ChatMessageHistory()
         self.retriever = self.load_retriever()
-        self.retrieval_qa_chat_prompt = hub.pull("langchain-ai/retrieval-qa-chat")
+        self.retrieval_qa_chat_prompt = hub.pull("dannymac180/openai-mirror-prompt")
         self.combine_docs_chain = create_stuff_documents_chain(self.llm, self.retrieval_qa_chat_prompt)
         self.retrieval_chain = create_retrieval_chain(self.retriever, self.combine_docs_chain)
         

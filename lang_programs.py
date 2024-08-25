@@ -33,7 +33,7 @@ class SIDRetriever(BaseRetriever):
     def get_relevant_documents(self, query: str):
         payload = {
             "query": query,
-            "limit": 10,  # Adjust as needed
+            "limit": 5,  # Adjust as needed
             "wishlist": {}
         }
         headers = {

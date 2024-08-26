@@ -1,1 +1,2 @@
 2024-07-31 16:14:42.338651: 'Collection' object has no attribute 'objects'
+2024-08-25 16:28:42.840623: 502 Server Error: Bad Gateway for url: https://non-parametric-predictive-coding.sid.ai/data/file

@@ -3,9 +3,7 @@ langchain
 langchain-openai
 langchain-groq
 langchain-anthropic
-weaviate-client
 python-dotenv
 openai
-elasticsearch
 streamlit
-chromadb
+python-fasthtml

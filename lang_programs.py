@@ -16,6 +16,7 @@ from langchain.schema import Document
 from langchain_core.retrievers import BaseRetriever
 from pydantic import Field
 import requests
+from langchain.cache import LangChainCache
 
 load_dotenv()
 
@@ -70,7 +71,8 @@ class LangChainProgram:
         self.retrieval_qa_chat_prompt = hub.pull("dannymac180/openai-mirror-prompt")
         self.combine_docs_chain = create_stuff_documents_chain(self.llm, self.retrieval_qa_chat_prompt)
         self.retrieval_chain = create_retrieval_chain(self.retriever, self.combine_docs_chain)
-        
+        self.cache = LangChainCache()
+
     def load_retriever(self):
         capsule_id = os.getenv("SID_CAPSULE_ID")
         token = os.getenv("SID_API_KEY")
@@ -94,7 +96,8 @@ class LangChainProgram:
         elif self.llm_provider == "claude-3.5-sonnet":
             return ChatAnthropic(model="claude-3-5-sonnet-20240620",
                                  api_key=os.getenv("ANTHROPIC_API_KEY"),
-                                 streaming=True)
+                                 streaming=True,
+                                 cache=self.cache)
         elif self.llm_provider == "gemini-pro-1.5-exp":
             return ChatGoogleGenerativeAI(
                 model="gemini-1.5-pro-exp-0801",
@@ -118,16 +121,25 @@ class LangChainProgram:
         )
 
         callbacks = [StreamingStdOutCallbackHandler(), tracer]
-        for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}, config={'callbacks': callbacks}):
-            if isinstance(chunk, dict) and 'answer' in chunk:
-                answer = chunk['answer']
-            elif isinstance(chunk, str):
-                answer = chunk
-            else:
-                continue  # Skip any other types of chunks
+
+        # Check cache before making a new API call
+        cached_response = self.cache.get(message)
+        if cached_response:
+            response = cached_response
+            yield response
+        else:
+            for chunk in self.retrieval_chain.stream({'input': message, 'chat_history': self.memory.messages}, config={'callbacks': callbacks}):
+                if isinstance(chunk, dict) and 'answer' in chunk:
+                    answer = chunk['answer']
+                elif isinstance(chunk, str):
+                    answer = chunk
+                else:
+                    continue  # Skip any other types of chunks
+                
+                response += answer
+                yield answer  # Only yield the actual answer text
             
-            response += answer
-            yield answer  # Only yield the actual answer text
+            self.cache.set(message, response)
         
         self.memory.add_ai_message(response)
         

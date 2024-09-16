@@ -7,7 +7,7 @@ from langchain_community.document_loaders import ObsidianLoader
 from langchain.text_splitter import CharacterTextSplitter
 
 # Import necessary functions from update_sid_capsule.py
-from update_sid_capsule import (
+from utils.update_sid_capsule import (
     load_json_file, save_json_file, log_with_timestamp, retry_operation,
     delete_from_sid, add_to_sid, get_all_sid_items, calculate_file_hash,
     OBSIDIAN_PATH, SID_BASE_URL, SID_API_KEY

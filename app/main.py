@@ -3,10 +3,19 @@ from app.components.ChatInterface import ChatInterface
 from app.components.SidePanel import SidePanel
 from app.components.ModelDropdown import ModelDropdown
 from app.components.ToolSelector import ToolSelector
-from app.styles.styles import styles
+from fasthtml.common import Style
 from app.utils import add_message, get_messages, generate_ai_response
 
-app, rt = fast_app(hdrs=(Style(styles),))
+app, rt = fast_app(
+    # Disable the default Pico CSS if you plan to include it manually
+    pico=False,
+    hdrs=(
+        # Link to Pico CSS via CDN
+        Link(rel='stylesheet', href='https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css'),
+        # Link to your custom styles.css
+        Link(rel='stylesheet', href='/styles/styles.css'),
+    )
+)
 
 @rt("/")
 def index():

@@ -1,10 +1,9 @@
 from fasthtml.common import *
-from app.components.ChatInterface import ChatInterface
-from app.components.SidePanel import SidePanel
-from app.components.ModelDropdown import ModelDropdown
-from app.components.ToolSelector import ToolSelector
-from fasthtml.common import Style
-from app.utils import add_message, get_messages, generate_ai_response
+from ChatInterface import ChatInterface
+from SidePanel import SidePanel
+from ModelDropdown import ModelDropdown
+from ToolSelector import ToolSelector
+from utils import add_message, get_messages, generate_ai_response
 
 app, rt = fast_app(
     # Disable the default Pico CSS if you plan to include it manually
